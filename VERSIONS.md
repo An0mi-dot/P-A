@@ -285,3 +285,7 @@ Iberdrola corporate proxy (ADFS/SAML) intercepting CDN and Supabase API calls.
 
 - Commit: de587e1
 - Notes: fix: untrack node_bin/ (should be gitignored)
+## v3.1.6 - 2026-07-24
+
+- Commit: e2ed859
+- Notes: fix: bypass npm in start_app.bat (node_bin/npm quebrado)
