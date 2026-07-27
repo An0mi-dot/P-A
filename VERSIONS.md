@@ -309,3 +309,7 @@ Iberdrola corporate proxy (ADFS/SAML) intercepting CDN and Supabase API calls.
 
 - Commit: 653a168
 - Notes: feat(criador): lê contagem do rodapé do SharePoint como fallback
+## v3.2.2 - 2026-07-27
+
+- Commit: 81247d4
+- Notes: fix(criador): usa contagem do rodapé como fonte principal, não fallback
