@@ -305,3 +305,7 @@ Iberdrola corporate proxy (ADFS/SAML) intercepting CDN and Supabase API calls.
 
 - Commit: a5f5c66
 - Notes: feat(criador): scan pastas existentes, mostra total e lacunas
+## v3.2.1 - 2026-07-27
+
+- Commit: 653a168
+- Notes: feat(criador): lê contagem do rodapé do SharePoint como fallback
