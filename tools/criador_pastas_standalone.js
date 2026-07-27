@@ -16,16 +16,20 @@ async function getMaxFolderNumber(page) {
   const items = await page.evaluate(() => {
     const rows = Array.from(document.querySelectorAll('div[role="row"]'));
     return rows.map(r => {
-      const nameDiv = r.querySelector('.ms-List-cell[data-automation-key="name"] a') || r.querySelector('span.signalField_491295e4');
+      const nameDiv = r.querySelector('.ms-List-cell[data-automation-key="name"] a')
+        || r.querySelector('span.signalField_491295e4')
+        || r.querySelector('[data-automation-key="name"] span, [data-automation-key="name"] a')
+        || r.querySelector('a[href*="OFICIO"]');
       return nameDiv ? nameDiv.innerText.trim() : "";
     });
   });
-  let max = 0;
+  const numeros = [];
   items.forEach(it => {
     const m = it.match(/OFICIO\s+(\d+)/i);
-    if (m) { const n = parseInt(m[1]); if (n > max) max = n; }
+    if (m) { numeros.push(parseInt(m[1])); }
   });
-  return max;
+  numeros.sort((a, b) => a - b);
+  return { max: numeros.length > 0 ? numeros[numeros.length - 1] : 0, total: numeros.length, todos: numeros };
 }
 
 async function waitForPageReady(page) {
@@ -153,8 +157,18 @@ async function main() {
   // Ler último número da lista
   let startFrom = 0;
   try {
-    startFrom = await getMaxFolderNumber(page);
-    console.log(`> Última pasta detectada na lista: OFICIO ${startFrom}`);
+    const dirInfo = await getMaxFolderNumber(page);
+    startFrom = dirInfo.max;
+    if (dirInfo.total > 0) {
+      const gaps = [];
+      for (let g = 1; g <= dirInfo.max; g++) {
+        if (!dirInfo.todos.includes(g)) gaps.push(g);
+      }
+      console.log(`> Pastas existentes: ${dirInfo.total} encontradas (OFICIO 1 a OFICIO ${dirInfo.max})`);
+      if (gaps.length > 0) console.log(`> Lacunas detectadas: ${gaps.length} números faltando entre 1 e ${dirInfo.max}`);
+    } else {
+      console.log("> Nenhuma pasta OFICIO encontrada. Começando do 1.");
+    }
   } catch(e) {
     console.error("Erro ao ler lista de pastas:", e.message);
   }
@@ -187,9 +201,9 @@ async function main() {
       if (created > 0 && created % REFRESH_INTERVAL === 0) {
         await refreshPage(page);
         // Re-ler do SharePoint pra garantir que não pulamos nenhuma
-        const latest = await getMaxFolderNumber(page);
-        if (latest >= current) {
-          current = latest + 1;
+        const dirInfo = await getMaxFolderNumber(page);
+        if (dirInfo.max >= current) {
+          current = dirInfo.max + 1;
           if (current > target) break;
         }
       }
@@ -219,8 +233,8 @@ async function main() {
           await refreshPage(page);
           // Re-sync current number
           try {
-            const latest = await getMaxFolderNumber(page);
-            if (latest >= current) current = latest + 1;
+            const dirInfo = await getMaxFolderNumber(page);
+            if (dirInfo.max >= current) current = dirInfo.max + 1;
           } catch(e) {}
           continue;
         } catch(e) {
