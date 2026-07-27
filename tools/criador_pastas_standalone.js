@@ -12,6 +12,24 @@ const DIALOG_TIMEOUT = 30000;
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => new Promise(resolve => rl.question(q, resolve));
 
+async function getFooterCount(page) {
+  try {
+    return await page.evaluate(() => {
+      const el = document.querySelector('[data-automationid="FooterItemRowAggregateValue"]');
+      if (el) return parseInt(el.innerText.trim()) || 0;
+      const all = Array.from(document.querySelectorAll('span, div'));
+      for (const e of all) {
+        if ((e.innerText || '').trim() === 'Contagem') {
+          const next = e.parentElement?.querySelector('[data-automationid="FooterItemRowAggregateValue"]')
+            || e.nextElementSibling;
+          if (next) return parseInt(next.innerText.trim()) || 0;
+        }
+      }
+      return 0;
+    });
+  } catch(e) { return 0; }
+}
+
 async function getMaxFolderNumber(page) {
   const items = await page.evaluate(() => {
     const rows = Array.from(document.querySelectorAll('div[role="row"]'));
@@ -164,8 +182,13 @@ async function main() {
       for (let g = 1; g <= dirInfo.max; g++) {
         if (!dirInfo.todos.includes(g)) gaps.push(g);
       }
-      console.log(`> Pastas existentes: ${dirInfo.total} encontradas (OFICIO 1 a OFICIO ${dirInfo.max})`);
-      if (gaps.length > 0) console.log(`> Lacunas detectadas: ${gaps.length} números faltando entre 1 e ${dirInfo.max}`);
+      console.log(`> Pastas detectadas na lista: ${dirInfo.total} (OFICIO 1 a OFICIO ${dirInfo.max})`);
+      if (gaps.length > 0) console.log(`> Lacunas: ${gaps.length} números faltando entre 1 e ${dirInfo.max}`);
+      const footerCount = await getFooterCount(page);
+      if (footerCount > dirInfo.total) {
+        console.log(`> Rodapé indica ${footerCount} itens no total (pode haver itens não-OFICIO ou páginas ocultas)`);
+        startFrom = Math.max(startFrom, footerCount);
+      }
     } else {
       console.log("> Nenhuma pasta OFICIO encontrada. Começando do 1.");
     }
