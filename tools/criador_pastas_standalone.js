@@ -14,6 +14,8 @@ const ask = (q) => new Promise(resolve => rl.question(q, resolve));
 
 async function getFooterCount(page) {
   try {
+    // Espera o rodapé aparecer (pode demorar após refresh)
+    await page.waitForSelector('[data-automationid="FooterItemRowAggregateValue"]', { timeout: 10000 }).catch(() => {});
     return await page.evaluate(() => {
       const el = document.querySelector('[data-automationid="FooterItemRowAggregateValue"]');
       if (el) return parseInt(el.innerText.trim()) || 0;
@@ -161,6 +163,9 @@ async function main() {
 
   console.log("\n[!] Página carregada.");
 
+  // Pequena pausa para o rodapé renderizar
+  await page.waitForTimeout(2000);
+
   // Verificar checkpoint
   const ck = loadCheckpoint();
   if (ck && ck.lastCreated) {
@@ -172,28 +177,37 @@ async function main() {
     }
   }
 
-  // Ler último número da lista
+  // Ler contagem do rodapé (mais confiável — mostra total de itens)
   let startFrom = 0;
   try {
+    const footerCount = await getFooterCount(page);
+    if (footerCount > 0) {
+      console.log(`> Rodapé SharePoint: ${footerCount} itens no total`);
+      startFrom = footerCount;
+    } else {
+      console.log("> Rodapé não disponível, lendo lista visual...");
+    }
+  } catch(e) {
+    console.log("> Não foi possível ler o rodapé, lendo lista visual...");
+  }
+
+  // Fallback: escanear linhas visíveis do DOM para achar o maior OFICIO
+  try {
     const dirInfo = await getMaxFolderNumber(page);
-    startFrom = dirInfo.max;
+    if (dirInfo.max > startFrom) {
+      console.log(`> Lista detectou OFICIO ${dirInfo.max} — maior que contagem do rodapé, usando ${dirInfo.max}`);
+      startFrom = dirInfo.max;
+    }
     if (dirInfo.total > 0) {
       const gaps = [];
       for (let g = 1; g <= dirInfo.max; g++) {
         if (!dirInfo.todos.includes(g)) gaps.push(g);
       }
-      console.log(`> Pastas detectadas na lista: ${dirInfo.total} (OFICIO 1 a OFICIO ${dirInfo.max})`);
+      console.log(`> Pastas OFICIO encontradas na lista: ${dirInfo.total}`);
       if (gaps.length > 0) console.log(`> Lacunas: ${gaps.length} números faltando entre 1 e ${dirInfo.max}`);
-      const footerCount = await getFooterCount(page);
-      if (footerCount > dirInfo.total) {
-        console.log(`> Rodapé indica ${footerCount} itens no total (pode haver itens não-OFICIO ou páginas ocultas)`);
-        startFrom = Math.max(startFrom, footerCount);
-      }
-    } else {
-      console.log("> Nenhuma pasta OFICIO encontrada. Começando do 1.");
     }
   } catch(e) {
-    console.error("Erro ao ler lista de pastas:", e.message);
+    console.error("Erro ao escanear lista:", e.message);
   }
 
   // Se checkpoint tem um número maior, usar ele
