@@ -301,3 +301,7 @@ Iberdrola corporate proxy (ADFS/SAML) intercepting CDN and Supabase API calls.
 
 - Commit: 0df34c9
 - Notes: fix(criador): refresh a cada 50 pastas, checkpoint, retry por operacao
+## v3.2.0 - 2026-07-27
+
+- Commit: a5f5c66
+- Notes: feat(criador): scan pastas existentes, mostra total e lacunas
