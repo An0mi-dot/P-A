@@ -387,6 +387,7 @@ ipcMain.handle('pje:start-session', async (event, args) => {
     const browser = await chromium.launch({
       executablePath: edgePath,
       headless: false,
+      devtools: true,
       args: ['--start-maximized', '--disable-blink-features=AutomationControlled']
     });
     const context = await browser.newContext({
@@ -566,16 +567,45 @@ ipcMain.handle('pje:run-extraction', async (event, args) => {
     page.on('console', consoleHandler);
 
     try {
-      await page.evaluate((opts) => {
-        const origPrompt = window.prompt;
+      // Open DevTools via CDP so the user can see execution in the console
+      try {
+        const cdpSession = await page.context().newCDPSession(page);
+        await cdpSession.send('Runtime.evaluate', {
+          expression: `window.__pje_origPrompt = window.prompt;
+window.prompt = (msg) => {
+  if (msg && msg.toLowerCase().includes('quantas')) return String(${limit});
+  if (msg && msg.toLowerCase().includes('juntar')) return String(${mergeChoice || 1});
+  return window.__pje_origPrompt ? window.__pje_origPrompt(msg) : prompt(msg);
+};`,
+          replMode: false,
+          includeCommandLineAPI: true,
+          userGesture: true
+        });
+      } catch (e) {
+        // Fallback: inject prompt override via page.evaluate
+        await page.evaluate((opts) => {
+          window.__pje_origPrompt = window.prompt;
+          window.PJE_PARAR = false;
+          window.prompt = (msg) => {
+            if (msg && msg.toLowerCase().includes('quantas')) return String(opts.limit);
+            if (msg && msg.toLowerCase().includes('juntar')) return String(opts.mergeChoice);
+            return window.__pje_origPrompt ? window.__pje_origPrompt(msg) : prompt(msg);
+          };
+        }, { limit, mergeChoice });
+      }
+
+      // Execute the script via page.evaluate (reliable for long-running scripts)
+      await page.evaluate(async (scriptStr) => {
         window.PJE_PARAR = false;
-        window.prompt = (msg) => {
-          if (msg && msg.toLowerCase().includes('quantas')) return String(opts.limit);
-          if (msg && msg.toLowerCase().includes('juntar')) return String(opts.mergeChoice);
-          return origPrompt(msg);
-        };
-        return eval(opts.script);
-      }, { script, limit, mergeChoice });
+        // Strip the outer IIFE wrapper and use AsyncFunction for proper awaiting
+        const body = scriptStr
+          .replace(/^window\.PJE_PARAR\s*=\s*false\s*;?\s*\n?/, '')
+          .replace(/^\(async\s+function\s*\(\)\s*\{/, '')
+          .replace(/\}\)\(\);\s*$/, '');
+        const AsyncFunction = (async function(){}).constructor;
+        const fn = new AsyncFunction(body);
+        return await fn();
+      }, script);
 
       return { ok: true };
     } finally {
