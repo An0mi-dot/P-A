@@ -313,3 +313,7 @@ Iberdrola corporate proxy (ADFS/SAML) intercepting CDN and Supabase API calls.
 
 - Commit: 81247d4
 - Notes: fix(criador): usa contagem do rodapé como fonte principal, não fallback
+## v3.2.3 - 2026-07-29
+
+- Commit: 5648a3b
+- Notes: feat(criador): preenche email automaticamente na tela de login Microsoft
