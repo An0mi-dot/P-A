@@ -6,6 +6,7 @@ const readline = require('readline');
 const SHAREPOINT_ROOT_URL = "https://iberdrola.sharepoint.com/sites/JUDCOELBA/Shared%20Documents/Forms/AllItems.aspx";
 const SHAREPOINT_TARGET_URL = "https://iberdrola.sharepoint.com/sites/JUDCOELBA/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FJUDCOELBA%2FShared%20Documents%2FCria%C3%A7%C3%A3o%20de%20Pastas&viewid=b0389131%2Db788%2D4354%2D8edd%2Dcfe27a229f93";
 const CHECKPOINT_FILE = path.join(__dirname, '.criador_checkpoint.json');
+const EMAIL_FILE = path.join(__dirname, '.criador_email.txt');
 const REFRESH_INTERVAL = 50;
 const DIALOG_TIMEOUT = 30000;
 
@@ -55,6 +56,23 @@ async function getMaxFolderNumber(page) {
 async function waitForPageReady(page) {
   await page.waitForSelector('div[role="row"], .ms-List-cell', { timeout: 120000 }).catch(() => {});
   await page.waitForTimeout(2000);
+}
+
+async function handleLogin(page, email) {
+  const loginInput = page.locator('input[name="loginfmt"], input#i0116');
+  try {
+    await loginInput.waitFor({ timeout: 10000 });
+    console.log(">> Página de login Microsoft detectada. Preenchendo email...");
+    await loginInput.fill(email);
+    await page.waitForTimeout(500);
+    const btnNext = page.locator('input[type="submit"], button:has-text("Próxima"), button:has-text("Next"), button:has-text("Avançar")');
+    await btnNext.first().waitFor({ timeout: 5000 });
+    await btnNext.first().click();
+    console.log(">> Email preenchido. Faça a senha manualmente se solicitado.");
+    await page.waitForTimeout(3000);
+  } catch (e) {
+    // Login page not detected, already authenticated
+  }
 }
 
 async function refreshPage(page) {
@@ -151,12 +169,29 @@ async function main() {
   const page = await context.newPage();
   page.setDefaultTimeout(30000);
 
+  // Ler email salvo ou perguntar
+  let email = '';
+  try {
+    if (fs.existsSync(EMAIL_FILE)) email = fs.readFileSync(EMAIL_FILE, 'utf8').trim();
+  } catch(e) {}
+  if (!email) {
+    email = await ask("Email corporativo para login (ex: B624140@amer.iberdrola.local): ");
+    if (email) {
+      try { fs.writeFileSync(EMAIL_FILE, email, 'utf8'); } catch(e) {}
+    }
+  } else {
+    console.log(`> Usando email salvo: ${email}`);
+  }
+
   console.log(`> Acessando: ${SHAREPOINT_ROOT_URL}`);
   try {
     await page.goto(SHAREPOINT_TARGET_URL, { timeout: 120000, waitUntil: 'domcontentloaded' });
   } catch(e) {
     console.error("Aviso: timeout na navegação inicial:", e.message);
   }
+
+  // Preencher email automaticamente se a tela de login aparecer
+  if (email) await handleLogin(page, email);
 
   console.log(">> Aguardando carregamento da lista de arquivos...");
   await waitForPageReady(page);
