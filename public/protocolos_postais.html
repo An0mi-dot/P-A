@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EXTRATJUD - Protocolos Postais</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/theme.css">
+    <script src="assets/theme.js"></script>
+    <script src="assets/status-bar.js"></script>
+    <script src="assets/dialogs.js"></script>
+    <style>
+        body { margin: 0; display: flex; height: 100vh; overflow: hidden; opacity: 0; transition: opacity 0.3s ease; font-family: 'Inter', sans-serif; }
+        body.loaded { opacity: 1; }
+
+        .proto-main { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 10px 12px; gap: 8px; }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 8px 12px;
+        }
+        .section-label {
+            font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px;
+            color: var(--text-secondary); margin: 4px 0 6px; display: flex; align-items: center; gap: 6px;
+        }
+        .sep { height: 1px; background: var(--border); margin: 6px 0; }
+
+        .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .row > * { flex-shrink: 0; }
+
+        .lbl { font-size: 0.85rem; color: var(--text); }
+        .muted { color: var(--text-secondary); font-style: italic; font-size: 0.82rem; }
+        .fill { flex: 1 1 auto; min-width: 120px; }
+
+        .input {
+            background: var(--bg); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 0.85rem; outline: none;
+        }
+        .input:focus { border-color: var(--primary); }
+        .input.pass { width: 150px; }
+        .input.wide { width: 150px; }
+
+        textarea.input { resize: vertical; font-family: 'JetBrains Mono', monospace; width: 100%; box-sizing: border-box; line-height: 1.4; }
+
+        .toolbar { gap: 10px; }
+
+        .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text); cursor: pointer; white-space: nowrap; }
+        .chk input { accent-color: var(--primary); }
+
+        /* Status bar */
+        .status-row { display: flex; align-items: center; gap: 12px; min-height: 30px; }
+        #status-text { font-size: 0.85rem; font-style: italic; color: var(--text-secondary); white-space: nowrap; }
+        small#status-text.error { color: var(--danger); font-weight: 700; font-style: normal; }
+        #progress-w { flex: 0 1 180px; }
+        #progress-bar { width: 100%; height: 10px; border-radius: 5px; background: var(--surface-hover); overflow: hidden; }
+        #progress-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 5px; transition: width 0.15s linear; }
+        #progress-lbl { font-size: 0.8rem; color: var(--text-secondary); min-width: 40px; }
+        .version { margin-left: auto; font-size: 0.75rem; color: var(--text-secondary); }
+
+        /* Log */
+        #log {
+            background: var(--log-bg, #0c0f14); color: var(--log-text, #d9e2ec); font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem; border-radius: var(--radius-lg); padding: 8px 10px; overflow-y: auto;
+            height: 150px; border: 1px solid var(--border); line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+        }
+        .log-ts { color: var(--text-secondary); }
+        .log-success { color: #4fb376; }
+        .log-warning { color: #d7ba7d; }
+        .log-error { color: #f44747; font-weight: 700; }
+        .log-highlight { color: var(--primary); }
+        .log-dim { color: var(--text-secondary); }
+
+        /* Results table */
+        .table-wrap { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+        table.results { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        table.results thead th {
+            position: sticky; top: 0; background: var(--primary); color: #fff; text-align: left;
+            padding: 7px 8px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap;
+        }
+        table.results tbody td { padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+        table.results tbody tr:nth-child(even) { background: var(--surface-hover); }
+        table.results .r-num { text-align: center; color: var(--text-secondary); }
+
+        /* Tabs (Processamento / Erros) */
+        .tabs { display: flex; gap: 4px; }
+        .tab-btn {
+            border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary);
+            padding: 6px 14px; border-radius: var(--radius-md) var(--radius-md) 0 0; cursor: pointer; font-size: 0.85rem; font-weight: 600;
+        }
+        .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .tab-panel { display: none; min-height: 0; flex: 1; }
+        .tab-panel.active { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+        .tab-panel.active > * { flex-shrink: 0; }
+
+        #consulta-input { }
+        .aq-warn { color: #d63384; font-size: 0.85rem; font-style: italic; font-weight: 600; }
+
+        /* Botões — estado visual claro de "rodando" */
+        .btn:disabled, .btn[disabled] { opacity: 0.5; cursor: not-allowed; filter: saturate(0.6); }
+        #btn-process[disabled] { animation: pulse 1.4s ease-in-out infinite; }
+        @keyframes pulse { 50% { opacity: 0.35; } }
+
+        /* Círculo de carregamento */
+        .spinner-box { display: inline-flex; align-items: center; gap: 8px; }
+        .spinner-ring {
+            width: 18px; height: 18px; border: 3px solid var(--border);
+            border-top-color: var(--primary); border-radius: 50%;
+            display: inline-block; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner-msg { font-size: 0.82rem; color: var(--text-secondary); font-style: italic; }
+        .hidden-ring { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-brand">
+            <i class="fa-solid fa-envelopes-bulk" style="color: var(--primary);"></i>
+            <span class="sidebar-brand-text">Protocolos Postais</span>
+        </div>
+        <button class="sidebar-back-btn" id="btn-back">
+            <i class="fa-solid fa-arrow-left"></i> Voltar ao Hub
+        </button>
+        <div style="margin-top:auto; font-size:0.72rem; color:var(--text-muted); display:flex; align-items:center; gap:6px;"><i class="fa-solid fa-code-branch"></i> v1.11.0</div>
+    </div>
+
+    <div class="proto-main">
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" data-panel="tab-processamento"><i class="fa-solid fa-gears"></i> Processamento</button>
+            <button class="tab-btn" data-panel="tab-erros"><i class="fa-solid fa-triangle-exclamation"></i> Erros e arquivos ignorados</button>
+        </div>
+
+        <!-- ============ PROCESSAMENTO ============ -->
+        <div class="tab-panel active" id="tab-processamento" style="display:flex; flex-direction:column; gap:8px;">
+
+            <div class="card">
+                <div class="section-label"><i class="fa-solid fa-folder-open"></i> Arquivos</div>
+                <div class="row">
+                    <button id="btn-files" class="btn btn-primary" style="font-size:0.85rem;"><i class="fa-solid fa-folder-open"></i> Selecionar PDFs</button>
+                    <button id="btn-folder" class="btn btn-primary" style="font-size:0.85rem;"><i class="fa-solid fa-box"></i> Pasta de Destino</button>
+                    <span class="muted fill" id="folder-label">Nenhuma pasta selecionada</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="section-label"><i class="fa-solid fa-lock"></i> Login Espaider</div>
+                <div class="row" style="gap:12px;">
+                    <span class="lbl">Usuário:</span>
+                    <input id="in-user" class="input" placeholder="usuário" autocomplete="off">
+                    <span class="lbl">Senha:</span>
+                    <input id="in-pass" class="input pass" type="password" placeholder="senha" autocomplete="off">
+                    <span class="lbl"><i class="fa-regular fa-calendar"></i> Data Intimação:</span>
+                    <input id="in-data" class="input wide" placeholder="DD/MM/AAAA">
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="section-label"><i class="fa-solid fa-play"></i> Ações</div>
+                <div class="row toolbar">
+                    <button id="btn-process" class="btn btn-success" style="font-size:0.85rem;"><i class="fa-solid fa-play"></i> Iniciar Processamento</button>
+                    <button id="btn-cancel" class="btn btn-danger" style="font-size:0.85rem; opacity:0.5;" disabled><i class="fa-solid fa-stop"></i> Cancelar</button>
+
+                    <label class="chk"><input type="checkbox" id="chk-headless"> Em Segundo Plano</label>
+                    <label class="chk"><input type="checkbox" id="chk-consulta"> Modo Consulta (NPU manual)</label>
+                    <label class="chk"><input type="checkbox" id="chk-agencia"> Modo Agência (físico, sem AR)</label>
+
+                    <button id="btn-export" class="btn btn-primary" style="font-size:0.85rem;" disabled><i class="fa-solid fa-file-excel"></i> Exportar Excel</button>
+                    <button id="btn-clear" class="btn" style="font-size:0.85rem; background:var(--text-muted);"><i class="fa-solid fa-trash"></i> Limpar Tudo</button>
+                </div>
+            </div>
+
+            <!-- Consulta input (hidden unless Modo Consulta) -->
+            <div id="consulta-input" style="display:none; gap:8px; flex-direction:column;">
+                <div class="card">
+                    <div class="section-label"><i class="fa-solid fa-hashtag"></i> NPUs (um por linha, ou NPU \ Comarca)</div>
+                    <div class="row" style="align-items:stretch;">
+                        <textarea id="in-npus" class="input" rows="5" placeholder="0000271-96.2026.8.05.0223&#10;0000272-96.2026.8.05.0224 \ SALVADOR"></textarea>
+                        <button id="btn-npus-clear" class="btn" style="background:var(--text-muted); height:fit-content; align-self:flex-start;"><i class="fa-solid fa-eraser"></i> Limpar</button>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <div class="section-label"><i class="fa-solid fa-building-columns"></i> Comarcas (uma por linha, opcional)</div>
+                        <div class="row" style="align-items:stretch;">
+                            <textarea id="in-comarcas" class="input" rows="3" placeholder="SALVADOR"></textarea>
+                            <button id="btn-comarcas-clear" class="btn" style="background:var(--text-muted); height:fit-content; align-self:flex-start;"><i class="fa-solid fa-eraser"></i> Limpar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status bar -->
+            <div class="card" style="padding:4px 12px;">
+                <div class="status-row">
+                    <span id="status-text">Status: Aguardando</span>
+                    <div id="progress-w"><div id="progress-bar"><div id="progress-fill"></div></div></div>
+                    <span id="progress-lbl">0%</span>
+                    <span class="spinner-box" id="spinner-box">
+                        <span class="spinner-ring hidden-ring" id="spinner-ring"></span>
+                        <span class="spinner-msg" id="spinner-msg">Lendo arquivos...</span>
+                    </span>
+                    <span class="aq-warn" id="aq-warn" style="display:none;"><i class="fa-solid fa-triangle-exclamation"></i> Modo imperfeito — revise os dados após leitura</span>
+                    <span class="version">v1.11.0</span>
+                </div>
+            </div>
+
+            <!-- Log -->
+            <div>
+                <div class="section-label"><i class="fa-solid fa-terminal"></i> Log de Processamento</div>
+                <div id="log"></div>
+            </div>
+
+            <!-- Results -->
+            <div style="flex:1 1 auto; flex-shrink:0; min-height:160px; display:flex; flex-direction:column;">
+                <div class="section-label"><i class="fa-solid fa-list"></i> Resultados (pré-visualização)</div>
+                <div class="table-wrap">
+                    <table class="results" id="results-table">
+                        <thead>
+                            <tr>
+                                <th>Nº</th><th>PARTE(S)</th><th>NPU</th><th>COMARCA</th>
+                                <th>ESCRITÓRIO</th><th>DATA</th><th>HORA</th><th>AR</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ ERROS ============ -->
+        <div class="tab-panel" id="tab-erros" style="display:none; gap:8px;">
+            <div class="section-label"><i class="fa-solid fa-triangle-exclamation"></i> Erros e arquivos ignorados</div>
+            <p class="muted">Clique em um item para abrir o trecho correspondente no log.</p>
+            <div class="table-wrap">
+                <table class="results" id="errors-table">
+                    <thead><tr><th>Arquivo</th><th>Problema</th><th>Status</th></tr></thead>
+                    <tbody id="errors-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        (function () {
+            document.addEventListener('DOMContentLoaded', () => document.body.classList.add('loaded'));
+
+            const $ = (id) => document.getElementById(id);
+            const state = {
+                files: [],
+                outputFolder: '',
+                results: [],
+                errors: [],
+                running: false,
+                _wasResumed: false,
+                _awaitingDone: false,
+            };
+            const VERSION = '1.11.0';
+
+            // --- Back ---
+            $('btn-back').addEventListener('click', () => {
+                document.body.style.opacity = '0';
+                setTimeout(() => { window.location.href = 'hub_servicos.html'; }, 300);
+            });
+
+            // --- Tabs ---
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+                btn.classList.add('active');
+                const panel = $(btn.dataset.panel);
+                panel.classList.add('active');
+                panel.style.display = 'flex';
+            }));
+
+            // --- Log ---
+            const logEl = $('log');
+            const LEVEL_COLOR = { success: 'log-success', warning: 'log-warning', error: 'log-error', highlight: 'log-highlight', dim: 'log-dim', info: '', counter: 'log-highlight' };
+            function log(level, msg) {
+                const ts = new Date();
+                const time = `[${String(ts.getHours()).padStart(2, '0')}:${String(ts.getMinutes()).padStart(2, '0')}:${String(ts.getSeconds()).padStart(2, '0')}] `;
+                const line = document.createElement('div');
+                const spanTs = document.createElement('span'); spanTs.className = 'log-ts'; spanTs.textContent = time;
+                const spanMsg = document.createElement('span'); spanMsg.className = LEVEL_COLOR[level] || ''; spanMsg.textContent = msg;
+                line.appendChild(spanTs); line.appendChild(spanMsg);
+                logEl.appendChild(line);
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+
+            // --- Date default ---
+            const today = new Date();
+            $('in-data').value = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+
+            // --- Helpers ---
+            function setStatus(text, isError) {
+                const el = $('status-text');
+                el.textContent = text;
+                el.classList.toggle('error', !!isError);
+            }
+            function setProgress(pct) {
+                $('progress-fill').style.width = (Math.max(0, Math.min(100, pct))) + '%';
+                $('progress-lbl').textContent = (Math.round(pct)) + '%';
+            }
+            function setRunning(running, statusText) {
+                state.running = running;
+                // Persiste para sobreviver a um eventual reload da página (o worker
+                // continua no processo principal; o estado da UI não deve se perder).
+                try { sessionStorage.setItem('protoRunning', running ? '1' : ''); } catch (e) {}
+                $('btn-process').disabled = running;
+                $('btn-cancel').disabled = !running;
+                $('btn-export').disabled = !!running || state.results.length === 0;
+                // Círculo de carregamento visível enquanto processa
+                $('spinner-ring').classList.toggle('hidden-ring', !running);
+                if (running && statusText) $('spinner-msg').textContent = statusText;
+                if (running) setStatus('Status: RODANDO');
+                // Barra global "Executando..." no topo (status-bar.js)
+                try {
+                    if (typeof window.setAutomationType === 'function') window.setAutomationType('protocolo');
+                    window.api.send('automation-status', running);
+                } catch (e) {}
+            }
+
+            // --- Render tables ---
+            function renderResults() {
+                const body = $('results-body');
+                body.innerHTML = '';
+                state.results.forEach((r, i) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td class="r-num">${i + 1}</td><td>${escapeHtml(r.parte || '')}</td><td>${escapeHtml(r.npu || '')}</td>`
+                        + `<td>${escapeHtml(r.comarca || '')}</td><td>${escapeHtml(r.escritorio || '')}</td>`
+                        + `<td>${escapeHtml(r.data || '')}</td><td>${escapeHtml(r.hora || '')}</td><td>${escapeHtml(r.ar || '')}</td>`;
+                    body.appendChild(tr);
+                });
+            }
+            function renderErrors() {
+                const body = $('errors-body');
+                body.innerHTML = '';
+                state.errors.forEach((e) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(e.arquivo || '')}</td><td>${escapeHtml(e.problema || '')}</td><td>${escapeHtml(e.status || '')}</td>`;
+                    body.appendChild(tr);
+                });
+            }
+            function escapeHtml(s) {
+                return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            }
+
+            // --- Toggle consulta input & agência warning ---
+            $('chk-consulta').addEventListener('change', () => {
+                $('consulta-input').style.display = $('chk-consulta').checked ? 'flex' : 'none';
+            });
+            $('chk-agencia').addEventListener('change', () => {
+                $('aq-warn').style.display = $('chk-agencia').checked ? 'inline' : 'none';
+            });
+            $('btn-npus-clear').addEventListener('click', () => $('in-npus').value = '');
+            $('btn-comarcas-clear').addEventListener('click', () => $('in-comarcas').value = '');
+
+            // --- Load config ---
+            async function loadConfig() {
+                try {
+                    const cfg = await window.api.invoke('proto:config');
+                    $('in-user').value = cfg.user || '';
+                    $('in-pass').value = cfg.pwd || '';
+                    if (cfg.output_folder) {
+                        state.outputFolder = cfg.output_folder;
+                        $('folder-label').textContent = 'Pasta: ' + cfg.output_folder;
+                    }
+                } catch (e) { console.warn('config load error', e); }
+            }
+
+            // --- Buttons ---
+            $('btn-files').addEventListener('click', async () => {
+                if (state.running) return;
+                const files = await window.api.invoke('proto:pick-files', state.outputFolder || undefined);
+                if (files && files.length) {
+                    state.files = files;
+                    log('highlight', `Selecionado ${files.length} arquivo(s)`);
+                }
+            });
+
+            $('btn-folder').addEventListener('click', async () => {
+                if (state.running) return;
+                const folder = await window.api.invoke('proto:pick-folder', state.outputFolder || undefined);
+                if (folder) {
+                    state.outputFolder = folder;
+                    $('folder-label').textContent = 'Pasta: ' + folder;
+                    log('highlight', `Pasta de destino: ${folder}`);
+                }
+            });
+
+            $('btn-clear').addEventListener('click', () => {
+                if (state.running) return;
+                state.files = []; state.results = []; state.errors = [];
+                logEl.innerHTML = '';
+                renderResults(); renderErrors();
+                $('btn-export').disabled = true;
+                $('in-npus').value = ''; $('in-comarcas').value = '';
+                setStatus('Status: Aguardando');
+                setProgress(0);
+            });
+
+            $('btn-cancel').addEventListener('click', async () => {
+                $('btn-cancel').disabled = true;
+                log('warning', 'Sinal de cancelamento registrado. Aguardando o fim da rotina atual...');
+                await window.api.invoke('proto:cancel');
+            });
+
+            $('btn-process').addEventListener('click', async () => {
+                if (state.running) return;
+                const consulta = $('chk-consulta').checked;
+                const modoAgencia = $('chk-agencia').checked;
+                const user = $('in-user').value;
+                const pwd = $('in-pass').value;
+                const headless = $('chk-headless').checked;
+
+                if (consulta) {
+                    const npus = $('in-npus').value.split('\n').map(l => l.trim()).filter(Boolean);
+                    if (!npus.length) { setStatus('Cole os NPUs antes de consultar', true); return; }
+                    return runConsulta(npus, user, pwd, headless, modoAgencia);
+                }
+
+                if (!state.files.length) { setStatus('Selecione um ou mais arquivos PDF primeiro', true); return; }
+                if (!state.outputFolder) { setStatus('Selecione a pasta de destino antes de processar', true); return; }
+
+                // Persiste credenciais
+                await window.api.invoke('proto:save-config', { user, pwd, output_folder: state.outputFolder });
+
+                state.results = []; state.errors = [];
+                renderResults(); renderErrors();
+                setProgress(0);
+                setRunning(true, 'Lendo arquivos...');
+
+                // Registra a execução no histórico da dashboard (paralela às demais).
+                // A finalização do registro é feita no processo principal (main), para
+                // sobreviver à navegação: se o usuário sair da página e voltar, o
+                // registro não fica "running" para sempre e o card do hub não trava.
+                let execId = null;
+                try {
+                    execId = await window.api.invoke('history:start', {
+                        type: 'protocolo',
+                        args: { modo: 'processar', arquivos: state.files.length, pasta: state.outputFolder || '' },
+                    });
+                } catch (e) {}
+
+                try {
+                    state._awaitingDone = true;
+                    const res = await window.api.invoke('proto:process-files', {
+                        files: state.files,
+                        output_folder: state.outputFolder,
+                        user, pwd, headless, modo_agencia: modoAgencia,
+                        execId,
+                    });
+                    state._awaitingDone = false;
+                    setProgress(100);
+                    setRunning(false);
+                    if (res.ok) {
+                        state.results = res.results || [];
+                        state.errors = state.errors.concat(res.errorRows || []);
+                        renderResults(); renderErrors();
+                        $('btn-export').disabled = state.results.length === 0;
+                        const mins = Math.floor(res.totalSec / 60); const secs = res.totalSec % 60;
+                        setStatus(`Status: Concluído (${state.results.length} processados em ${mins ? mins + 'm ' : ''}${secs}s)`);
+                        log('highlight', `Tempo total: ${mins ? mins + 'm ' : ''}${secs}s`);
+                    } else {
+                        setRunning(false);
+                        setStatus('Status: Erro no processamento', true);
+                        log('error', res.error || 'Erro desconhecido');
+                    }
+                } catch (e) {
+                    state._awaitingDone = false;
+                    setRunning(false);
+                    setStatus('Status: Erro', true);
+                    log('error', e.message || String(e));
+                }
+            });
+
+            async function runConsulta(npus, user, pwd, headless, modoAgencia) {
+                if (!state.outputFolder) { setStatus('Selecione a pasta de destino antes de processar', true); return; }
+                await window.api.invoke('proto:save-config', { user, pwd, output_folder: state.outputFolder });
+
+                const comarcasText = $('in-comarcas').value;
+                const comarcaLines = comarcasText ? comarcasText.split('\n').map(l => l.trim()).filter(Boolean) : [];
+
+                // Combina formato "NPU \ Comarca"
+                const pairedNpus = [], pairedComarcas = [];
+                npus.forEach((line, i) => {
+                    if (line.includes('\\')) {
+                        const parts = line.split('\\');
+                        pairedNpus.push(parts[0].trim());
+                        pairedComarcas.push((parts[1] || '').trim());
+                    } else {
+                        pairedNpus.push(line);
+                        pairedComarcas.push(comarcaLines[i] || '');
+                    }
+                });
+
+                state.results = []; state.errors = [];
+                renderResults(); renderErrors();
+                setProgress(0);
+                setRunning(true, 'Consultando Espaider...');
+
+                let execId = null;
+                try {
+                    execId = await window.api.invoke('history:start', {
+                        type: 'protocolo',
+                        args: { modo: 'consulta', npus: npus.length, pasta: state.outputFolder || '' },
+                    });
+                } catch (e) {}
+
+                try {
+                    state._awaitingDone = true;
+                    const res = await window.api.invoke('proto:consultar-npus', {
+                        npus: pairedNpus, comarcas: pairedComarcas,
+                        output_folder: state.outputFolder, user, pwd, headless,
+                        execId,
+                    });
+                    state._awaitingDone = false;
+                    setProgress(100); setRunning(false);
+                    if (res.ok) {
+                        state.results = res.results || [];
+                        renderResults();
+                        $('btn-export').disabled = state.results.length === 0;
+                        const mins = Math.floor(res.totalSec / 60); const secs = res.totalSec % 60;
+                        setStatus(`Status: Consulta concluída (${state.results.length} em ${mins ? mins + 'm ' : ''}${secs}s)`);
+                        log('highlight', `Tempo total: ${mins ? mins + 'm ' : ''}${secs}s`);
+                    } else {
+                        setRunning(false);
+                        setStatus('Status: Erro na consulta', true);
+                        log('error', res.error || 'Erro desconhecido');
+                    }
+                } catch (e) {
+                    state._awaitingDone = false;
+                    setRunning(false);
+                    setStatus('Status: Erro', true);
+                    log('error', e.message || String(e));
+                }
+            }
+
+            // --- Export ---
+            $('btn-export').addEventListener('click', async () => {
+                if (!state.results.length) { setStatus('Não há resultados para exportar', true); return; }
+                const dataIntim = $('in-data').value.trim();
+                const dataSanitizada = dataIntim ? dataIntim.replace(/\//g, '-') : 'Data';
+                const defaultName = `CITAÇÕES E INTIMAÇÕES PROTOCOLO ${dataSanitizada}.xlsx`;
+                const defaultPath = state.outputFolder ? state.outputFolder.replace(/[\\/]$/, '') + '\\' + defaultName : defaultName;
+                const filePath = await window.api.invoke('proto:save-file', { defaultPath });
+                if (!filePath) return;
+                try {
+                    const res = await window.api.invoke('proto:export-file', {
+                        results: state.results, filename: filePath, data_intimacao: dataIntim,
+                    });
+                    if (res.ok) {
+                        log('success', `Planilha Excel exportada com sucesso: ${filePath}`);
+                    } else {
+                        setStatus('Erro ao exportar', true);
+                        log('error', res.error || 'Falha ao exportar');
+                    }
+                } catch (e) {
+                    log('error', 'Falha ao exportar: ' + (e.message || e));
+                }
+            });
+
+            // --- IPC listeners (main → renderer) ---
+            window.api.on('proto:log', ({ level, msg }) => log(level, msg));
+            window.api.on('proto:progress', (pct) => setProgress(pct));
+            // Conclusão vinda do processo principal. Necessária quando a página é
+            // recarregada durante o processamento: sem ela, a UI retomada nunca
+            // saberia quando o worker terminou.
+            window.api.on('proto:done', (res) => {
+                if (!res) return;
+                // Fluxo normal: o handler com `await` já renderiza o resultado; se
+                // o evento chegou antes do invoke resolver, aguarda o próprio invoke.
+                // Se chegou depois (e a página não foi reiniciada durante o run),
+                // também ignora — o estado de UI já foi aplicado.
+                if (state._awaitingDone) return;
+                if (state.running === false && !state._wasResumed) return;
+                const resumed = !!state._wasResumed;
+                state._wasResumed = false;
+                state.running = false;
+                try { sessionStorage.setItem('protoRunning', ''); } catch (e) {}
+                $('btn-process').disabled = false;
+                $('btn-cancel').disabled = true;
+                $('btn-export').disabled = !(res.results && res.results.length);
+                $('spinner-ring').classList.add('hidden-ring');
+                if (res.ok) {
+                    state.results = res.results || [];
+                    if (res.errorRows && res.errorRows.length) state.errors = state.errors.concat(res.errorRows);
+                    renderResults(); renderErrors();
+                    const mins = Math.floor(res.totalSec / 60); const secs = res.totalSec % 60;
+                    setStatus(`Status: Concluído ${resumed ? '(revisão pós-voltar) ' : ''}(${state.results.length} processados em ${mins ? mins + 'm ' : ''}${secs}s)`);
+                    log('success', 'Processamento finalizado' + (resumed ? ' — resultados atualizados após retorno à página.' : '.'));
+                } else {
+                    setStatus('Status: Erro no processamento', true);
+                    log('error', res.error || 'Erro desconhecido');
+                }
+                // Barra global sumirá (não está mais rodando).
+                try { window.api.send('automation-status', false); } catch (e) {}
+            });
+
+            // Bridge do console do processo principal: log cru/direto de tudo que o main loga
+            window.api.on('log-message', (entry) => {
+                if (!entry) return;
+                const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString('pt-BR') : new Date().toLocaleTimeString('pt-BR');
+                let raw = `[${ts}] ${entry.msg || ''}`;
+                if (entry.details) raw += '\n' + entry.details;
+                log(entry.type === 'error' ? 'error' : (entry.type === 'warn' ? 'warning' : 'dim'), raw);
+            });
+
+            loadConfig();
+            renderResults();
+            renderErrors();
+
+            // Se a página recarregou durante um processamento, restaura o estado
+            // "Rodando". Verifica o histórico em vez de só sessionStorage: é a fonte
+            // de verdade — se o worker terminou (ou falhou) enquanto a página estava
+            // fora, o registro já não está mais "running".
+            (async () => {
+                try {
+                    const wasRunningFlag = (() => { try { return sessionStorage.getItem('protoRunning') === '1'; } catch (e) { return false; } })();
+                    if (!wasRunningFlag) return;
+                    // Se o worker ainda estiver de fato rodando, há um registro
+                    // protocolo "running" no histórico.
+                    const res = await window.api.invoke('history:get-records', { type: 'protocolo', status: 'running', limit: 1 });
+                    if (res && res.records && res.records.length) {
+                        state._wasResumed = true;
+                        setRunning(true, 'Lendo arquivos...');
+                        log('highlight', 'Processamento em andamento — retomando exibição dos logs.');
+                    } else {
+                        // Terminou enquanto estávamos fora; apenas mostra que não roda.
+                        try { sessionStorage.setItem('protoRunning', ''); } catch (e) {}
+                    }
+                } catch (e) {}
+            })();
+        })();
+    </script>
+</body>
+</html>

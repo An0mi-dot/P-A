@@ -704,6 +704,7 @@ a:hover { color: var(--primary-hover); }
 .stagger-2 { animation-delay: 80ms; }
 .stagger-3 { animation-delay: 160ms; }
 .stagger-4 { animation-delay: 240ms; }
+.stagger-5 { animation-delay: 320ms; }
 
 /* --- Scrollbar --- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

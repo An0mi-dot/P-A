@@ -21,6 +21,20 @@ function load() {
         console.error('[HistoryService] Falha ao carregar histórico:', e.message);
         _history = [];
     }
+    // Execuções de sessões anteriores não podem permanecer "running" após o boot
+    // (ex.: app fechado no meio de uma automação). Marca como interrompidas para
+    // o hub/dashboard não exibir "Processando" para algo que não está rodando.
+    const now = new Date().toISOString();
+    let changed = false;
+    for (const r of _history) {
+        if (r && r.status === 'running') {
+            r.status = 'stopped';
+            r.finishedAt = r.finishedAt || now;
+            r.error = r.error || 'Interrompido (sessão anterior)';
+            changed = true;
+        }
+    }
+    if (changed) save();
 }
 
 function save() {

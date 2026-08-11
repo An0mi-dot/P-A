@@ -130,10 +130,12 @@
         .tag-projudi { background: #fce7f3; color: #9d174d; }
         .tag-pje { background: #e0e7ff; color: #3730a3; }
         .tag-espaider { background: #ffedd5; color: #9a3412; }
+        .tag-rpa { background: #d1fae5; color: #065f46; }
 
         [data-theme="dark"] .tag-projudi { background: rgba(157,23,77,0.2); color: #f9a8d4; }
         [data-theme="dark"] .tag-pje { background: rgba(55,48,163,0.2); color: #a5b4fc; }
         [data-theme="dark"] .tag-espaider { background: rgba(154,52,18,0.2); color: #fdba74; }
+        [data-theme="dark"] .tag-rpa { background: rgba(6,95,70,0.2); color: #6ee7b7; }
 
         .card-title { font-size: 1.05rem; font-weight: 600; margin: 0; }
         .service-card:hover:not(.disabled) .card-title { color: var(--primary); }
@@ -153,6 +155,53 @@
 
         .status-active { background: var(--success-light); color: var(--success); }
         .status-soon { background: var(--warning-light); color: var(--warning); }
+        .status-dev { background: var(--primary-light); color: var(--primary); }
+
+        /* Card em execução: borda colorida animada + selo PROCESSANDO */
+        .service-card.is-running {
+            border-color: var(--success) !important;
+            box-shadow: 0 0 0 3px var(--success-light), var(--shadow-md);
+        }
+        .service-card.is-running .running-rim {
+            position: absolute;
+            inset: -1px;
+            border-radius: var(--radius-lg);
+            padding: 1px;
+            background: linear-gradient(90deg, var(--success), var(--primary), var(--warning), var(--success));
+            background-size: 300% 100%;
+            animation: running-scan 2.4s linear infinite;
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+            z-index: 1;
+        }
+        @keyframes running-scan {
+            0% { background-position: 0% 0; }
+            100% { background-position: 300% 0; }
+        }
+        .card-running-badge {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #fff;
+            background: var(--primary);
+            border-radius: 6px;
+            padding: 3px 9px;
+            margin-left: auto;
+        }
+        .card-running-badge .dot {
+            width: 7px; height: 7px; border-radius: 50%; background: #fff;
+            animation: running-pulse 1s ease-in-out infinite;
+        }
+        @keyframes running-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+        .service-card.is-running .card-running-badge { display: flex; }
+        .service-card .running-rim { display: none; }
+        .service-card.is-running .running-rim { display: block; }
 
         .card-time {
             font-size: 0.75rem;
@@ -241,7 +290,7 @@
             </div>
 
             <div class="services-grid">
-                <a href="extrator_projudi.html" class="service-card slide-up stagger-1">
+                <a href="extrator_projudi.html" class="service-card slide-up stagger-1" data-process="projudi">
                     <span class="card-platform tag-projudi">PROJUDI</span>
                     <div class="card-icon"><i class="fa-solid fa-file-lines"></i></div>
                     <h3 class="card-title">Citações e Intimações</h3>
@@ -249,10 +298,12 @@
                     <div class="card-meta">
                         <span class="card-status status-active">Disponível</span>
                         <span class="card-time"><i class="fa-regular fa-clock"></i> ~2 min</span>
+                        <span class="card-status card-running-badge"><span class="dot"></span>Processando</span>
                     </div>
+                    <span class="running-rim"></span>
                 </a>
 
-                <a href="arquivados_projudi.html" class="service-card slide-up stagger-2">
+                <a href="arquivados_projudi.html" class="service-card slide-up stagger-2" data-process="arquivados">
                     <span class="card-platform tag-projudi">PROJUDI</span>
                     <div class="card-icon"><i class="fa-solid fa-box-archive"></i></div>
                     <h3 class="card-title">Processos Arquivados</h3>
@@ -260,10 +311,12 @@
                     <div class="card-meta">
                         <span class="card-status status-active">Disponível</span>
                         <span class="card-time"><i class="fa-regular fa-clock"></i> Variável</span>
+                        <span class="card-status card-running-badge"><span class="dot"></span>Processando</span>
                     </div>
+                    <span class="running-rim"></span>
                 </a>
 
-                <a href="pje_extrator.html" class="service-card slide-up stagger-3">
+                <a href="pje_extrator.html" class="service-card slide-up stagger-3" data-process="pje">
                     <span class="card-platform tag-pje">PJE</span>
                     <div class="card-icon"><i class="fa-solid fa-gavel"></i></div>
                     <h3 class="card-title">Automação PJE</h3>
@@ -271,7 +324,9 @@
                     <div class="card-meta">
                         <span class="card-status status-soon">Em desenvolvimento</span>
                         <span class="card-time"><i class="fa-regular fa-clock"></i> --</span>
+                        <span class="card-status card-running-badge"><span class="dot"></span>Processando</span>
                     </div>
+                    <span class="running-rim"></span>
                 </a>
 
                 <div class="service-card disabled">
@@ -283,6 +338,19 @@
                         <span class="card-status status-soon">Em breve</span>
                     </div>
                 </div>
+
+                <a href="protocolos_postais.html" class="service-card slide-up stagger-5" data-process="protocolo">
+                    <span class="card-platform tag-rpa">RPA</span>
+                    <div class="card-icon"><i class="fa-solid fa-envelopes-bulk"></i></div>
+                    <h3 class="card-title">Leitura de Protocolos Postais</h3>
+                    <p class="card-desc">Automação da leitura e conferência de protocolos postais, substituindo o processo atualmente feito de forma manual.</p>
+                    <div class="card-meta">
+                        <span class="card-status status-dev">Em desenvolvimento</span>
+                        <span class="card-time"><i class="fa-regular fa-clock"></i> --</span>
+                        <span class="card-status card-running-badge"><span class="dot"></span>Processando</span>
+                    </div>
+                    <span class="running-rim"></span>
+                </a>
 
             </div>
         </div>
@@ -393,6 +461,27 @@
                 setTimeout(() => { window.location.href = target; }, 150);
             });
         });
+
+        // Marca cards de serviços cujo processo está rodando (borda + selo)
+        (function runningCards(){
+            const cards = document.querySelectorAll('.service-card[data-process]');
+            async function refresh(){
+                if (!window.api) return;
+                let runningTypes = new Set();
+                try {
+                    const res = await window.api.invoke('history:get-records', { status: 'running', limit: 100 });
+                    (res.records || []).forEach(r => { if (r.type) runningTypes.add(r.type); });
+                } catch (e) {}
+                cards.forEach(card => {
+                    const proc = (card.dataset.process || '').split(',').map(s => s.trim()).filter(Boolean);
+                    const active = proc.some(t => runningTypes.has(t));
+                    card.classList.toggle('is-running', active);
+                });
+            }
+            refresh();
+            setInterval(refresh, 2000);
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+        })();
 
         // Settings
         (function(){

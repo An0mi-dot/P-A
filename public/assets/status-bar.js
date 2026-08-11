@@ -67,6 +67,7 @@
     arquivados:'PROJUDI - Arquivados',
     pje:'PJE - 1º/2º Grau',
     sharepoint:'SharePoint - Criar Pastas',
+    protocolo:'Protocolos Postais',
     unknown:'Automação em execução'
   };
 

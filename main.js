@@ -83,7 +83,7 @@ if (process.env.NODE_ENV !== 'production') {
     require('electron-reload')(__dirname, {
       electron: require(path.join(__dirname, 'node_modules', 'electron')),
       awaitWriteFinish: true,
-      ignored: /node_modules|[\/\\]\./
+      ignored: /node_modules|[\/\\]\.|[\/\\]Externo[\/\\]/i
     });
     console.log('Dev: electron-reload enabled');
   } catch (e) {
@@ -1141,15 +1141,20 @@ ipcMain.handle('history:start', (event, record) => {
     return id;
 });
 
-ipcMain.handle('history:finish', (event, data) => {
-    if (!global._currentExecId) return false;
-    const result = historyService.updateRecord(global._currentExecId, {
-        status: data.status || 'success',
+// Aceita id explícito (execução paralela) ou recai no global _currentExecId.
+// Chamada: history:finish(id, data)  ou  history:finish(data).
+ipcMain.handle('history:finish', (event, idOrData, maybeData) => {
+    let id = global._currentExecId;
+    let data = idOrData;
+    if (typeof idOrData === 'string') { id = idOrData; data = maybeData || {}; }
+    if (!id) return false;
+    const result = historyService.updateRecord(id, {
+        status: (data && data.status) || 'success',
         finishedAt: new Date().toISOString(),
-        files: data.files || [],
-        error: data.error || null
+        files: (data && data.files) || [],
+        error: (data && data.error) || null
     });
-    global._currentExecId = null;
+    if (id === global._currentExecId) global._currentExecId = null;
     return result;
 });
 
@@ -1164,9 +1169,12 @@ process.on('automation-finished', (code) => {
     global._currentExecId = null;
 });
 
-ipcMain.handle('history:add-log', (event, logEntry) => {
-    if (!global._currentExecId) return false;
-    return historyService.addLog(global._currentExecId, logEntry);
+ipcMain.handle('history:add-log', (event, idOrEntry, maybeEntry) => {
+    let id = global._currentExecId;
+    let logEntry = idOrEntry;
+    if (typeof idOrEntry === 'string') { id = idOrEntry; logEntry = maybeEntry || {}; }
+    if (!id) return false;
+    return historyService.addLog(id, logEntry);
 });
 
 // --- Queue Service IPC Handlers ---
@@ -1401,6 +1409,57 @@ ipcMain.handle('dialog:openDirectory', async () => {
     }
 });
 
+// --- Protocolos Postais (app Python empacotado, abre como janela separada) ---
+// O app vive na pasta "Externo" do EXTRATJUD. Não há opção de selecionar caminho:
+// ele é localizado automaticamente em (1) pasta de instalação, (2) recursos
+// empacotados, (3) pasta raiz do EXTRATJUD em desenvolvimento.
+function findProtocolosPostaisExe() {
+    const REL = ['Externo', 'ProtocolosPostais', 'ProtocolosPostais.exe'];
+    const candidates = [];
+
+    // 1) Instalado — o instalador cria Externo/ProtocolosPostais no diretório de instalação
+    try {
+        if (process.execPath) candidates.push(path.join(path.dirname(process.execPath), ...REL));
+    } catch (e) {}
+
+    // 2) Empacotado dentro do EXTRATJUD (process.resourcesPath)
+    try {
+        candidates.push(path.join(process.resourcesPath, ...REL));
+    } catch (e) {}
+
+    // 3) Em desenvolvimento — pasta raiz do EXTRATJUD
+    try {
+        candidates.push(path.join(__dirname, ...REL));
+    } catch (e) {}
+
+    for (const c of candidates) {
+        try { if (c && fs.existsSync(c)) return c; } catch (e) {}
+    }
+    return null;
+}
+
+ipcMain.handle('protocolos:get-status', async () => {
+    const exe = findProtocolosPostaisExe();
+    return { found: !!exe, path: exe || null };
+});
+
+ipcMain.handle('protocolos:open', async (event) => {
+    try {
+        const exe = findProtocolosPostaisExe();
+        if (!exe) return { ok: false, error: 'Aplicativo não encontrado. Reinstale o EXTRATJUD.' };
+        // Abre como processo filho separado (cwd = pasta do exe para o app achar config.json)
+        const child = require('child_process').spawn(exe, [], {
+            detached: true,
+            stdio: 'ignore',
+            cwd: path.dirname(exe)
+        });
+        child.unref();
+        return { ok: true, path: exe };
+    } catch (e) {
+        return { ok: false, error: e.message || String(e) };
+    }
+});
+
 // Native OS dialogs (so they appear as real OS windows, not in-page overlays)
 ipcMain.handle('dialog:alert', async (event, message, title = 'EXTRATJUD') => {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -1440,4 +1499,226 @@ ipcMain.handle('get-webview-url', async () => {
         console.error('get-webview-url error', e);
     }
     return null;
+});
+
+// ============================================================================
+// PROTOCOLOS POSTAIS — Página nativa (JS port)
+// ============================================================================
+const proto = require('./src/protocolos/process');
+const protoConfig = require('./src/protocolos/config_loader');
+const { Worker } = require('worker_threads');
+const protoWorkers = new Set();
+
+const protoState = {
+    cancelled: false,
+};
+
+function protoWin(event) {
+    try { return BrowserWindow.fromWebContents(event.sender); } catch (e) { return null; }
+}
+function protoSend(win, channel, payload) {
+    try { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); } catch (e) {}
+}
+
+// Finaliza o registro de histórico de protocolos no processo principal. Isso
+// garante que o registro não fique "running" se o renderer navegar (a página
+// antiga morre e seu closure de history:finish nunca roda).
+function finishProtoHistory(execId, out) {
+    if (!execId) return false;
+    const cancelled = !!protoState.cancelled;
+    const status = cancelled ? 'stopped' : (out && out.ok ? 'success' : 'error');
+    const count = (out && out.results && out.results.length) || 0;
+    return historyService.updateRecord(execId, {
+        status,
+        finishedAt: new Date().toISOString(),
+        files: count ? [String(count) + ' registro(s)'] : [],
+        error: cancelled ? 'Cancelado pelo usuário' : (out && out.ok ? null : ((out && out.error) || 'Erro no processamento de protocolos')),
+    });
+}
+
+// Executa o pipeline em worker_thread (main nunca bloqueia). Requests remotos
+// (OCR remoto) são resolvidos aqui no main, onde electron.net + proxy funcionam.
+function runProtoWorker(win, kind, opts) {
+    return new Promise((resolve) => {
+        let w = null;
+        try {
+            w = new Worker(require('path').join(__dirname, 'src', 'protocolos', 'worker.js'));
+        } catch (e) {
+            resolve({ ok: false, error: 'Falha ao iniciar worker: ' + (e.message || e) });
+            return;
+        }
+        protoWorkers.add(w);
+        const timeout = setTimeout(() => { finish({ ok: false, error: 'Timeout no processamento (15 min)' }); }, 900000);
+        function finish(res) {
+            clearTimeout(timeout);
+            protoWorkers.delete(w);
+            try { w.terminate(); } catch (e) {}
+            resolve(res);
+        }
+        w.on('message', async (m) => {
+            if (!m || typeof m !== 'object') return;
+            if (m.type === 'remote') {
+                try {
+                    const { net } = require('electron');
+                    const p = m.payload || {};
+                    const controller = new AbortController();
+                    const t = setTimeout(() => controller.abort(), p.timeoutMs || 25000);
+                    let resp = null;
+                    if (net && net.fetch) {
+                        resp = await net.fetch(p.url, { ...(p.opts || {}), signal: controller.signal });
+                    } else {
+                        resp = await fetch(p.url, { ...(p.opts || {}), signal: controller.signal });
+                    }
+                    clearTimeout(t);
+                    const raw = await resp.text();
+                    let j = null;
+                    try { j = JSON.parse(raw); } catch (e) { j = {}; }
+                    // Sempre leva status HTTP (mesmo em corpo não-JSON, ex.: página de erro do proxy).
+                    w.postMessage({ type: 'remote-result', id: p.id, payload: { __status: resp.status, ...(j || {}) } });
+                } catch (e) {
+                    w.postMessage({ type: 'remote-result', id: m.payload ? m.payload.id : null, payload: null });
+                }
+                return;
+            }
+            if (m.type === 'log') protoSend(win, 'proto:log', m.payload);
+            else if (m.type === 'progress') protoSend(win, 'proto:progress', m.payload);
+            else if (m.type === 'done') {
+                finish({ ok: m.payload.ok, results: m.payload.results || [], errorRows: m.payload.errorRows || [], totalSec: m.payload.totalSec || 0, error: m.payload.error });
+            }
+        });
+        w.on('error', (e) => {
+            finish({ ok: false, error: (e && e.stack) || String(e) });
+        });
+        w.postMessage({ type: kind, opts });
+    });
+}
+
+protoConfig.loadConfig();
+
+// Config (usuario/mascara senha/pasta)
+ipcMain.handle('proto:config', async (event) => {
+    const cfg = protoConfig.loadConfig();
+    return {
+        user: cfg.user || '',
+        pwd: cfg.pwd ? '********' : '',
+        pwdSet: !!cfg.pwd,
+        output_folder: cfg.output_folder || '',
+    };
+});
+
+ipcMain.handle('proto:save-config', async (event, data = {}) => {
+    const cfg = protoConfig.loadConfig();
+    if (typeof data.user === 'string') cfg.user = data.user;
+    if (typeof data.pwd === 'string' && data.pwd && data.pwd !== '********') cfg.pwd = data.pwd;
+    if (typeof data.output_folder === 'string' && data.output_folder) cfg.output_folder = data.output_folder;
+    // A api_key só é persistida cifrada (key-protect). Evita texto puro em disco.
+    if (typeof data.api_key === 'string' && data.api_key) {
+        const kp = require('./src/protocolos/key-protect');
+        cfg.api_key = kp.isEncrypted(data.api_key) ? data.api_key  : kp.encrypt(data.api_key);
+    }
+    const res = protoConfig.saveConfig(cfg);
+    return res.ok ? { ok: true } : { ok: false, error: res.error };
+});
+
+// Dialogo de selecao de pasta
+ipcMain.handle('proto:pick-folder', async (event, folder = '') => {
+    const win = protoWin(event);
+    const r = await dialog.showOpenDialog(win, {
+        title: 'Selecionar pasta de destino',
+        defaultPath: folder || undefined,
+        properties: ['openDirectory', 'createDirectory'],
+    });
+    if (r.canceled || !r.filePaths.length) return null;
+    return r.filePaths[0];
+});
+
+// Dialogo de selecao de arquivos PDF
+ipcMain.handle('proto:pick-files', async (event, folder = '') => {
+    const win = protoWin(event);
+    const r = await dialog.showOpenDialog(win, {
+        title: 'Selecione arquivos PDF',
+        defaultPath: folder || undefined,
+        filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+        properties: ['openFile', 'multiSelections'],
+    });
+    if (r.canceled || !r.filePaths.length) return [];
+    return r.filePaths;
+});
+
+// Dialogo de salvar planilha
+ipcMain.handle('proto:save-file', async (event, opts = {}) => {
+    const win = protoWin(event);
+    const r = await dialog.showSaveDialog(win, {
+        title: 'Exportar planilha',
+        defaultPath: opts.defaultPath,
+        filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+    });
+    if (r.canceled || !r.filePath) return null;
+    return r.filePath;
+});
+
+// Processar arquivos PDF
+ipcMain.handle('proto:process-files', async (event, opts) => {
+    const win = protoWin(event);
+    protoState.cancelled = false;
+    let out;
+    try {
+        out = await runProtoWorker(win, 'process-files', {
+            files: opts.files || [],
+            outputFolder: opts.output_folder || '',
+            user: opts.user || '',
+            pwd: opts.pwd || '',
+            headless: opts.headless !== false,
+            modoAgencia: !!opts.modo_agencia,
+        });
+    } catch (e) {
+        out = { ok: false, error: e.message || String(e) };
+    }
+    // Finaliza o registro no main (sobrevive à navegação do renderer) e avisa a
+    // página — mesmo se ela foi recarregada durante o processamento.
+    finishProtoHistory(opts.execId || null, out);
+    protoSend(win, 'proto:done', out);
+    return out;
+});
+
+// Consultar NPUs (modo consulta)
+ipcMain.handle('proto:consultar-npus', async (event, opts) => {
+    const win = protoWin(event);
+    protoState.cancelled = false;
+    let out;
+    try {
+        out = await runProtoWorker(win, 'consultar-npus', {
+            npus: opts.npus || [],
+            comarcas: opts.comarcas || [],
+            outputFolder: opts.output_folder || '',
+            user: opts.user || '',
+            pwd: opts.pwd || '',
+            headless: opts.headless !== false,
+        });
+    } catch (e) {
+        out = { ok: false, error: e.message || String(e) };
+    }
+    finishProtoHistory(opts.execId || null, out);
+    protoSend(win, 'proto:done', out);
+    return out;
+});
+
+// Exportar XLSX (3 abas)
+ipcMain.handle('proto:export-file', async (event, payload) => {
+    try {
+        const { results = [], filename = '', data_intimacao = '' } = payload || {};
+        if (!filename) return { ok: false, error: 'Pasta de destino não definida.' };
+        await proto.exportToExcel(results, filename, data_intimacao);
+        return { ok: true, path: filename };
+    } catch (e) {
+        return { ok: false, error: e.message || String(e) };
+    }
+});
+
+ipcMain.handle('proto:cancel', async (event) => {
+    protoState.cancelled = true;
+    for (const w of protoWorkers) {
+        try { w.postMessage({ type: 'cancel' }); } catch (e) {}
+    }
+    return { ok: true };
 });

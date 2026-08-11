@@ -15,19 +15,14 @@ const ask = (q) => new Promise(resolve => rl.question(q, resolve));
 
 async function getFooterCount(page) {
   try {
-    // Espera o rodapé aparecer (pode demorar após refresh)
-    await page.waitForSelector('[data-automationid="FooterItemRowAggregateValue"]', { timeout: 10000 }).catch(() => {});
     return await page.evaluate(() => {
+      // Procura "Contagem" seguido de numero no texto completo da pagina
+      const allText = document.body.innerText;
+      const m = allText.match(/[Cc]ontagem[:\s]*(\d[\d.,]*)/);
+      if (m) return parseInt(m[1].replace(/[.,]/g, '')) || 0;
+      // Fallback: seletor especifico do rodape
       const el = document.querySelector('[data-automationid="FooterItemRowAggregateValue"]');
       if (el) return parseInt(el.innerText.trim()) || 0;
-      const all = Array.from(document.querySelectorAll('span, div'));
-      for (const e of all) {
-        if ((e.innerText || '').trim() === 'Contagem') {
-          const next = e.parentElement?.querySelector('[data-automationid="FooterItemRowAggregateValue"]')
-            || e.nextElementSibling;
-          if (next) return parseInt(next.innerText.trim()) || 0;
-        }
-      }
       return 0;
     });
   } catch(e) { return 0; }
@@ -198,9 +193,6 @@ async function main() {
 
   console.log("\n[!] Página carregada.");
 
-  // Pequena pausa para o rodapé renderizar
-  await page.waitForTimeout(2000);
-
   // Verificar checkpoint
   const ck = loadCheckpoint();
   if (ck && ck.lastCreated) {
@@ -300,7 +292,7 @@ async function main() {
 
       if (cmd === 'r') {
         continue; // retry same folder
-      } else if (cmd === 'p') {
+      } else       if (cmd === 'p') {
         try {
           await refreshPage(page);
           // Re-sync current number

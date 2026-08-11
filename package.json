@@ -51,14 +51,59 @@
       "installerHeaderIcon": "public/assets/icon.ico",
       "installerSidebar": "public/assets/installerSidebar.bmp",
       "uninstallerSidebar": "public/assets/installerSidebar.bmp",
-      "installerHeader": "public/assets/installerHeader.bmp"
+      "installerHeader": "public/assets/installerHeader.bmp",
+      "include": "installer.nsh"
     },
     "files": [
-      "**/*",
+      "main.js",
+      "preload.js",
+      "package.json",
+      "public/**/*",
+      "src/**/*",
+      "!src/**/*.bak",
+      "!src/**/*_testpage.png",
+      "!src/**/devtools_*.js",
+      "!src/inspect_excel.js",
+      "!**/*.md",
+      "!**/*.doc",
+      "!dashboard.html",
+      "!hub_servicos.html",
+      "!protocolos_postais.html",
+      "!history-service.js",
+      "!installer.nsh",
+      "!updates.json",
+      "!*.bat",
+      "!*.ps1",
+      "!*.ipynb",
+      "!node_bin/**/*",
+      "!node_modules/**/node_bin/**/*",
+      "!tests/**/*",
+      "!tools/**/*",
+      "!scripts/**/*",
+      "!devtools/**/*",
+      "!notes/**/*",
+      "!portal/**/*",
+      "!sql/**/*",
+      "!externas/**/*",
+      "!assets/**/*",
+      "!config/**/*",
+      "!screenshots/**/*",
       "!dist/**/*",
+      "!test-results/**/*",
       "!**/*.xlsx",
-      "!**/*.pdf",
-      "!screenshots/**/*"
+      "!**/*.pdf"
+    ],
+    "extraResources": [
+      {
+        "from": "Externo/ProtocolosPostais",
+        "to": "Externo/ProtocolosPostais",
+        "filter": [
+          "ProtocolosPostais.exe",
+          "config.json",
+          "*.xlsx",
+          "LEIA-ME.txt"
+        ]
+      }
     ]
   },
   "type": "commonjs",
@@ -71,11 +116,14 @@
     "png-to-ico": "^3.0.1"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.3",
     "@supabase/supabase-js": "^2.98.0",
     "cheerio": "^1.1.2",
     "dayjs": "^1.11.19",
     "electron-updater": "^6.7.3",
     "exceljs": "^4.4.0",
-    "playwright-core": "^1.57.0"
+    "pdfjs-dist": "^4.10.38",
+    "playwright-core": "^1.57.0",
+    "tesseract.js": "^7.0.0"
   }
 }

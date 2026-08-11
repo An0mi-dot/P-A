@@ -14,7 +14,11 @@ const INVOKE_CHANNELS = [
     'history:get-records', 'history:get-record', 'history:delete-record',
     'history:clear', 'history:get-stats', 'history:start', 'history:finish', 'history:add-log',
     'queue:add-job', 'queue:remove-job', 'queue:get-jobs',
-    'queue:clear-completed', 'queue:get-stats'
+    'queue:clear-completed', 'queue:get-stats',
+    'protocolos:get-status', 'protocolos:open',
+    'proto:config', 'proto:save-config', 'proto:pick-folder',
+    'proto:pick-files', 'proto:save-file',
+    'proto:process-files', 'proto:consultar-npus', 'proto:export-file', 'proto:cancel'
 ];
 
 const SEND_CHANNELS = [
@@ -26,7 +30,8 @@ const SEND_CHANNELS = [
 const ON_CHANNELS = [
     'log-message', 'script-finished', 'automation-status',
     'updater:status', 'request-pje-input',
-    'sharepoint:waiting-for-login', 'sharepoint:login-completed', 'sharepoint:prompt-create'
+    'sharepoint:waiting-for-login', 'sharepoint:login-completed', 'sharepoint:prompt-create',
+    'proto:log', 'proto:progress', 'proto:done'
 ];
 
 contextBridge.exposeInMainWorld('api', {

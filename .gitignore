@@ -53,5 +53,14 @@ Backups/*.html (keep READMEs)
 docs/models/*.xlsx
 docs/models/*.xls
 
+# Apps externos (outras linguagens) - nao versionar binarios
+Externo/
+
 # Scripts temp
 *.tmp
+
+# Runtimes locais (node portable p/ engine worker)
+node_bin/
+
+# Correlatos externos (outras linguagens)
+Externos/
