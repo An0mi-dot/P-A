@@ -1,5 +1,5 @@
 /**
- * dialogs.js — Native OS dialog helpers for EXTRATJUD
+ * dialogs.js — Native OS dialog helpers
  *
  * Replaces in-page alert() / confirm() with real OS-level dialogs via
  * Electron IPC (dialog:alert / dialog:confirm in main.js).
@@ -19,7 +19,7 @@
 
     window.ipcAlert = async function (message, title) {
         if (api) {
-            await api.invoke('dialog:alert', message, title || 'EXTRATJUD');
+            await api.invoke('dialog:alert', message, title || '');
         } else {
             window.alert(message);
         }
@@ -27,7 +27,7 @@
 
     window.ipcConfirm = async function (message, title) {
         if (api) {
-            return await api.invoke('dialog:confirm', message, title || 'EXTRATJUD');
+            return await api.invoke('dialog:confirm', message, title || '');
         } else {
             return window.confirm(message);
         }

@@ -17,7 +17,7 @@ const themeConfig = {
     apply(mode) {
         localStorage.setItem('theme-preference', mode);
         const root = document.documentElement;
-        let target = mode === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : mode;
+        let target = 'dark';
         root.removeAttribute('data-theme');
         root.setAttribute('data-theme', target);
         this.updateUI();

@@ -37,7 +37,6 @@ const { chromium } = require('playwright-core');
 
 
 
-const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -49,7 +48,7 @@ const historyService = require('./src/history-service');
 const queueService = require('./src/queue-service');
 
 // IPC bridge: renderer calls this to make HTTP requests via Electron's net module
-// (net module uses Windows credential manager + NTLM/Kerberos proxy auth natively)
+// Electron's net module keeps requests in the main process.
 ipcMain.handle('net-fetch', async (event, url, init) => {
   try {
     const fetchOpts = {
@@ -68,10 +67,6 @@ ipcMain.handle('net-fetch', async (event, url, init) => {
     throw new Error('NETWORK_ERROR:' + e.message);
   }
 });
-
-// Tell Chromium to auto-authenticate with NTLM/Kerberos for ALL proxy/servers (needed for corporate proxies)
-app.commandLine.appendSwitch('auth-server-whitelist', '*');
-app.commandLine.appendSwitch('auth-negotiate-delegate-whitelist', '*');
 
 let mainWindow;
 let appTray = null;
@@ -642,140 +637,10 @@ function writeStateFile(state) {
   catch (e) { console.error('writeStateFile', e); }
 }
 
-function fetchJson(url, timeout = 15000, maxRetries = 2) {
-  // Robust fetch: handles redirects, retries and longer timeout to avoid spurious timeouts
-  return new Promise((resolve, reject) => {
-    const maxRedirects = 5;
-    const attempt = (u, attemptNo = 0, redirectsLeft = maxRedirects) => {
-      try {
-        const req = https.get(u, { timeout, headers: { 'User-Agent': 'EXTRATJUD-Updater' } }, (res) => {
-          // Follow redirects
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirectsLeft > 0) {
-            const loc = String(res.headers.location).startsWith('http') ? res.headers.location : new URL(res.headers.location, u).toString();
-            res.resume();
-            return attempt(loc, attemptNo, redirectsLeft - 1);
-          }
-
-          if (res.statusCode < 200 || res.statusCode >= 400) {
-            let eData = '';
-            res.on('data', c => eData += c);
-            res.on('end', () => reject(new Error(`HTTP ${res.statusCode} fetching ${u}: ${eData}`)));
-            return;
-          }
-
-          let data = '';
-          res.on('data', chunk => data += chunk);
-          res.on('end', () => {
-            try { resolve(JSON.parse(data)); }
-            catch (e) {
-              // If JSON parse fails, return raw text so caller can provide a helpful error
-              resolve({ __raw: data });
-            }
-          });
-        });
-
-        req.on('error', (err) => {
-          if (attemptNo < maxRetries) {
-            setTimeout(() => attempt(u, attemptNo + 1, redirectsLeft), 300 * (attemptNo + 1));
-          } else reject(err);
-        });
-
-        req.on('timeout', () => {
-          req.destroy();
-          if (attemptNo < maxRetries) {
-            setTimeout(() => attempt(u, attemptNo + 1, redirectsLeft), 500 * (attemptNo + 1));
-          } else reject(new Error('timeout'));
-        });
-      } catch (e) { reject(e); }
-    };
-    attempt(url, 0, maxRedirects);
-  });
-}
-
-// --- Update IPC Handlers ---
+// --- Local app information ---
 ipcMain.handle('get-app-version', async () => {
   try { return require(path.join(__dirname, 'package.json')).version || '0.0.0'; }
   catch (e) { return '0.0.0'; }
-});
-
-ipcMain.handle('get-update-config', async () => {
-  try {
-    const state = readStateFile();
-    let pkg = {};
-    try { pkg = require(path.join(__dirname, 'package.json')); } catch (e) { pkg = {}; }
-    return {
-      updateServer: (state.update && state.update.updateServer) || pkg.updateServer || null,
-      autoUpdate: (state.update && state.update.autoUpdate) || false
-    };
-  } catch (e) { console.error('get-update-config', e); return { updateServer: null, autoUpdate: false }; }
-});
-
-// get-service-versions handler removed (service-specific versions disabled)
-
-ipcMain.handle('set-update-config', async (event, cfg) => {
-  try {
-    const state = readStateFile();
-    state.update = state.update || {};
-    if (typeof cfg.updateServer === 'string') state.update.updateServer = cfg.updateServer;
-    if (typeof cfg.autoUpdate === 'boolean') state.update.autoUpdate = cfg.autoUpdate;
-    writeStateFile(state);
-    return { ok: true };
-  } catch (e) { console.error('set-update-config', e); return { ok: false, error: e.message }; }
-});
-
-// Cache para check-for-updates (TTL: 1 hora)
-let _updateCache = null;
-let _updateCacheTime = 0;
-const UPDATE_CACHE_TTL = 60 * 60 * 1000; // 1 hora
-
-ipcMain.handle('check-for-updates', async () => {
-  // Retorna cache se ainda válido
-  if (_updateCache && (Date.now() - _updateCacheTime < UPDATE_CACHE_TTL)) {
-    return _updateCache;
-  }
-
-  try {
-    const state = readStateFile();
-    const updateServer = (state.update && state.update.updateServer) || (require(path.join(__dirname, 'package.json')).updateServer) || null;
-    if (!updateServer) return { error: 'no_update_server' };
-    const meta = await fetchJson(updateServer);
-    if (meta && meta.__raw) {
-      // Provide clearer error when endpoint returns non-JSON (commonly a HTML page)
-      const snippet = String(meta.__raw).slice(0, 1000);
-      // If user pointed to a GitHub release page, suggest raw URL
-      let suggestion = null;
-      try {
-        const m = updateServer.match(/github\.com\/([^\/]+)\/([^\/]+)\/releases\/(?:tag|download)\/(.+)/i);
-        if (m) suggestion = `https://raw.githubusercontent.com/${m[1]}/${m[2]}/main/updates.json`;
-      } catch (__) {}
-      return { error: 'invalid_json', message: 'Update URL did not return JSON', rawSnippet: snippet, suggestion };
-    }
-    const localVer = require(path.join(__dirname, 'package.json')).version || '0.0.0';
-    const latest = meta.version || meta.tag_name || null;
-    if (!latest) return { error: 'no_version_in_meta', meta };
-    const toParts = (v) => (''+v).replace(/^v/i,'').split('.').map(n => parseInt(n)||0);
-    const L = toParts(latest), C = toParts(localVer);
-    let result;
-    for (let i=0;i<Math.max(L.length,C.length);i++) {
-      if ((L[i]||0) > (C[i]||0)) { result = { updateAvailable: true, latestVersion: latest, changelog: meta.notes || meta.body || meta.changelog || '', url: meta.url || meta.html_url || meta.download_url || updateServer }; break; }
-      if ((L[i]||0) < (C[i]||0)) { result = { updateAvailable: false }; break; }
-    }
-    if (!result) result = { updateAvailable: false };
-    _updateCache = result;
-    _updateCacheTime = Date.now();
-    return result;
-  } catch (e) { console.error('check-for-updates error', e); return { error: e.message }; }
-});
-
-ipcMain.on('perform-update', (event, url) => {
-  if (url === 'restart') {
-      try {
-          autoUpdater.quitAndInstall();
-      } catch(e) { console.error('AutoUpdater quitAndInstall error', e); }
-      return;
-  }
-  try { if (url) shell.openExternal(url); }
-  catch (e) { console.error('perform-update', e); }
 });
 
 // Show Windows Native Notification for Subsidios
@@ -790,7 +655,7 @@ ipcMain.handle('show-notification', async (event, options) => {
     // Use Electron's Notification API (Windows 10+ only)
     // Falls back gracefully on older systems
     const notification = new (require('electron').Notification)({
-      title: title || 'EXTRATJUD',
+      title: title || '',
       body: body,
       icon: icon ? path.resolve(__dirname, icon) : undefined,
       urgency: 'normal'
@@ -919,8 +784,9 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000, // Initial size for login (can be smaller if desired, but 1000 is fine)
     height: 750,
+    title: '',
     autoHideMenuBar: true,
-    icon: path.join(__dirname, 'public', 'assets', 'icon.ico'),
+    icon: path.join(__dirname, 'public', 'assets', 'icon_black.ico'),
     webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -979,7 +845,7 @@ function createWindow() {
           mainWindow.hide();
           if (appTray) {
               appTray.displayBalloon({
-                  title: 'Extratjud',
+                  title: '',
                   content: 'O aplicativo continua rodando em segundo plano.'
               });
           }
@@ -1030,12 +896,12 @@ app.whenReady().then(async () => {
 
   try {
       // Tray Setup
-      const iconPath = path.join(__dirname, 'public', 'assets', 'icon.ico');
+      const iconPath = path.join(__dirname, 'public', 'assets', 'icon_black.ico');
       appTray = new Tray(iconPath);
-      appTray.setToolTip('Extratjud');
+      appTray.setToolTip('');
       
       const contextMenu = Menu.buildFromTemplate([
-          { label: 'Abrir App', click: () => { if(mainWindow) mainWindow.show(); } },
+          { label: 'Abrir', click: () => { if(mainWindow) mainWindow.show(); } },
           { type: 'separator' },
           { label: 'Sair', click: () => { app.isQuitting = true; app.quit(); } }
       ]);
@@ -1062,28 +928,6 @@ app.whenReady().then(async () => {
       } catch (e) { console.error('Error seeding userData PJE storage', e); }
     }
   } catch (e) { /* ignore */ }
-
-  // --- Auto-Updater Setup ---
-  try {
-     autoUpdater.logger = console;
-     // Trigger check
-     autoUpdater.checkForUpdatesAndNotify();
-
-     autoUpdater.on('update-available', (info) => {
-        // Notify frontend
-        const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
-        if(win) win.webContents.send('updater:status', { status: 'available', info });
-     });
-     
-     autoUpdater.on('update-downloaded', (info) => {
-        const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
-        if(win) win.webContents.send('updater:status', { status: 'ready', info });
-     });
-     
-     autoUpdater.on('error', (err) => {
-        console.error('Updater Error:', err);
-     });
-  } catch(e) { console.error('Updater Init Failed:', e); }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -1410,9 +1254,9 @@ ipcMain.handle('dialog:openDirectory', async () => {
 });
 
 // --- Protocolos Postais (app Python empacotado, abre como janela separada) ---
-// O app vive na pasta "Externo" do EXTRATJUD. Não há opção de selecionar caminho:
+// O app vive na pasta "Externo". Não há opção de selecionar caminho:
 // ele é localizado automaticamente em (1) pasta de instalação, (2) recursos
-// empacotados, (3) pasta raiz do EXTRATJUD em desenvolvimento.
+// empacotados, (3) pasta raiz do projeto em desenvolvimento.
 function findProtocolosPostaisExe() {
     const REL = ['Externo', 'ProtocolosPostais', 'ProtocolosPostais.exe'];
     const candidates = [];
@@ -1422,12 +1266,12 @@ function findProtocolosPostaisExe() {
         if (process.execPath) candidates.push(path.join(path.dirname(process.execPath), ...REL));
     } catch (e) {}
 
-    // 2) Empacotado dentro do EXTRATJUD (process.resourcesPath)
+    // 2) Empacotado dentro do app (process.resourcesPath)
     try {
         candidates.push(path.join(process.resourcesPath, ...REL));
     } catch (e) {}
 
-    // 3) Em desenvolvimento — pasta raiz do EXTRATJUD
+    // 3) Em desenvolvimento — pasta raiz do projeto
     try {
         candidates.push(path.join(__dirname, ...REL));
     } catch (e) {}
@@ -1446,7 +1290,7 @@ ipcMain.handle('protocolos:get-status', async () => {
 ipcMain.handle('protocolos:open', async (event) => {
     try {
         const exe = findProtocolosPostaisExe();
-        if (!exe) return { ok: false, error: 'Aplicativo não encontrado. Reinstale o EXTRATJUD.' };
+        if (!exe) return { ok: false, error: 'Aplicativo não encontrado. Reinstale o app.' };
         // Abre como processo filho separado (cwd = pasta do exe para o app achar config.json)
         const child = require('child_process').spawn(exe, [], {
             detached: true,
@@ -1461,7 +1305,7 @@ ipcMain.handle('protocolos:open', async (event) => {
 });
 
 // Native OS dialogs (so they appear as real OS windows, not in-page overlays)
-ipcMain.handle('dialog:alert', async (event, message, title = 'EXTRATJUD') => {
+ipcMain.handle('dialog:alert', async (event, message, title = '') => {
     const win = BrowserWindow.fromWebContents(event.sender);
     await dialog.showMessageBox(win, {
         type: 'info',
@@ -1472,7 +1316,7 @@ ipcMain.handle('dialog:alert', async (event, message, title = 'EXTRATJUD') => {
     });
 });
 
-ipcMain.handle('dialog:confirm', async (event, message, title = 'EXTRATJUD') => {
+ipcMain.handle('dialog:confirm', async (event, message, title = '') => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const { response } = await dialog.showMessageBox(win, {
         type: 'question',
@@ -1536,8 +1380,7 @@ function finishProtoHistory(execId, out) {
     });
 }
 
-// Executa o pipeline em worker_thread (main nunca bloqueia). Requests remotos
-// (OCR remoto) são resolvidos aqui no main, onde electron.net + proxy funcionam.
+// Executa o pipeline em worker_thread (main nunca bloqueia).
 function runProtoWorker(win, kind, opts) {
     return new Promise((resolve) => {
         let w = null;
@@ -1557,29 +1400,6 @@ function runProtoWorker(win, kind, opts) {
         }
         w.on('message', async (m) => {
             if (!m || typeof m !== 'object') return;
-            if (m.type === 'remote') {
-                try {
-                    const { net } = require('electron');
-                    const p = m.payload || {};
-                    const controller = new AbortController();
-                    const t = setTimeout(() => controller.abort(), p.timeoutMs || 25000);
-                    let resp = null;
-                    if (net && net.fetch) {
-                        resp = await net.fetch(p.url, { ...(p.opts || {}), signal: controller.signal });
-                    } else {
-                        resp = await fetch(p.url, { ...(p.opts || {}), signal: controller.signal });
-                    }
-                    clearTimeout(t);
-                    const raw = await resp.text();
-                    let j = null;
-                    try { j = JSON.parse(raw); } catch (e) { j = {}; }
-                    // Sempre leva status HTTP (mesmo em corpo não-JSON, ex.: página de erro do proxy).
-                    w.postMessage({ type: 'remote-result', id: p.id, payload: { __status: resp.status, ...(j || {}) } });
-                } catch (e) {
-                    w.postMessage({ type: 'remote-result', id: m.payload ? m.payload.id : null, payload: null });
-                }
-                return;
-            }
             if (m.type === 'log') protoSend(win, 'proto:log', m.payload);
             else if (m.type === 'progress') protoSend(win, 'proto:progress', m.payload);
             else if (m.type === 'done') {
@@ -1611,11 +1431,6 @@ ipcMain.handle('proto:save-config', async (event, data = {}) => {
     if (typeof data.user === 'string') cfg.user = data.user;
     if (typeof data.pwd === 'string' && data.pwd && data.pwd !== '********') cfg.pwd = data.pwd;
     if (typeof data.output_folder === 'string' && data.output_folder) cfg.output_folder = data.output_folder;
-    // A api_key só é persistida cifrada (key-protect). Evita texto puro em disco.
-    if (typeof data.api_key === 'string' && data.api_key) {
-        const kp = require('./src/protocolos/key-protect');
-        cfg.api_key = kp.isEncrypted(data.api_key) ? data.api_key  : kp.encrypt(data.api_key);
-    }
     const res = protoConfig.saveConfig(cfg);
     return res.ok ? { ok: true } : { ok: false, error: res.error };
 });

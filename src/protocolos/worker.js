@@ -1,11 +1,10 @@
 // Pipeline de Protocolos Postais executado em worker_thread — mantém o
 // processo principal do Electron livre (UI nunca trava) e permite log/progresso
-// em tempo real. Requests do OCR remoto são delegados ao main via mensagens.
+// em tempo real.
 'use strict';
 
 const { parentPort } = require('worker_threads');
 const proc = require('./process');
-const ocr = require('./ocr');
 
 let cancelled = false;
 
@@ -19,9 +18,6 @@ async function run(kind, opts) {
     log: (level, msg) => post('log', { level, msg }),
     progress: (pct) => post('progress', pct),
   };
-  // Dá visibilidade em tempo real ao OCR remoto. Sem isso, o pipeline fica
-  // mudo durante a espera pelo serviço externo (sem nenhuma linha de log).
-  ocr.setOcrLogHook((level, msg) => post('log', { level, msg }));
   try {
     if (kind === 'consultar-npus') {
       const out = await proc.consultarNpus(ctx, opts);

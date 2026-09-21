@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EXTRATJUD - Automação PJE</title>
+    <title>Automação PJE</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -325,7 +325,6 @@
                     <div class="extraction-mode">
                         <div class="mode-option disabled" data-mode="auto" style="opacity:0.5;pointer-events:none;filter:grayscale(1);">
                             <i class="fa-solid fa-robot"></i>
-                            <div class="mode-option-title">Automação Interna <span style="font-size:0.7rem;color:var(--text-muted);">(Em breve)</span></div>
                             <div class="mode-option-desc">Robô Playwright nativo</div>
                         </div>
                         <div class="mode-option" data-mode="inject" onclick="selectMode(this)">
@@ -474,11 +473,10 @@
                     </div>
                     <div id="tab-sobre" class="settings-pane">
                         <div style="text-align:center;">
-                            <h3 style="margin:0; color:var(--primary);">EXTRATJUD</h3>
                             <p class="text-sm font-mono text-muted">v<span id="settings-app-ver">?.?.?</span></p>
                             <hr style="border:0; border-top:1px solid var(--border); margin:20px 0;">
                             <div style="text-align:left; font-size:0.9rem; line-height:1.7;">
-                                <p>O <strong>EXTRATJUD</strong> é uma solução RPA para o setor jurídico da Neoenergia Coelba.</p>
+                                <p>Automação de tarefas judiciais.</p>
                             </div>
                             <p class="text-xs text-muted mt-4 font-mono">Electron: <span id="env-electron">...</span> | Node: <span id="env-node">...</span> | OS: <span id="env-plat">...</span></p>
                         </div>
@@ -562,7 +560,7 @@
   }
   var json = JSON.stringify(data, null, 2);
   navigator.clipboard.writeText(json).then(function() {
-    console.log('%c✅ Sessão PJE copiada! Vá no app Extrajud e clique em "Importar Sessão".', 'color:#4CAF50; font-size:14px; font-weight:bold;');
+    console.log('%c✅ Sessão PJE copiada! Volte ao app e clique em "Importar Sessão".', 'color:#4CAF50; font-size:14px; font-weight:bold;');
   })["catch"](function() {
     console.log('%c📋 Copie o JSON abaixo manualmente:', 'color:#FF9800; font-size:14px;');
     console.log(json);
@@ -1154,7 +1152,7 @@
             addLog('Execução finalizada.', 'success');
             try {
                 const config = await window.api.invoke('get-general-config');
-                if (config.notificationFinish) new Notification('Extratjud', { body: 'Automação PJE finalizada.' });
+                if (config.notificationFinish) new Notification('', { body: 'Automação PJE finalizada.' });
                 if (config.soundFinish) playSuccessSound();
             } catch(e) {}
         });

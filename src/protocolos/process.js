@@ -12,7 +12,6 @@ const ocr = require('./ocr');
 const { EspaiderAutomator } = require('./espaider');
 const { FallbackConsultant, exportToExcel } = require('./excel');
 const config = require('./config_loader');
-const pythonEngine = require('./python_engine');
 
 function now() {
   return new Date();
@@ -55,7 +54,7 @@ function duplicateKey(data) {
 
 // Texto do PDF: nativo pymupdf-equivalente → OCR local (tesseract multi-engine) a 400dpi.
 // Port fiel de process_pdf_multi (extractor.py:1474-1477): texto via _ocr_multi_engine nas
-// imagens 400dpi. Sem OCR remoto de texto separado e sem heurísticas de páginas
+// imagens 400dpi, sem heurísticas de páginas
 // (===PAGE=== / expectedByPages / pares de 2 páginas) — removidas do port fiel.
 async function getOcrText(filePath, { onLog = () => {}, modoAgencia = false } = {}) {
   let text = '';
@@ -80,59 +79,11 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
   npuCount = npuPositions.length;
   let secTexts = text ? ex.splitTextByProtocol(text) : [];
 
-  // OCR remoto (serviço externo) para campos estruturados.
-  // Port fiel de process_pdf_multi (extractor.py:1486): roda só quando
-  // npu_count>0 ou modo agência.
-  let apiResults = null;
-  const needApi = npuCount > 0 || modoAgencia;
-  if (needApi) {
-    if (!images) images = await pdf.renderPages(filePath, 400);
-    onLog('dim', '  → Lendo via OCR...');
-    let structured = {};
-    try { structured = await ocr.extractStructured(images, '', modoAgencia); } catch (e) {}
-    if (Array.isArray(structured)) {
-      if (modoAgencia || structured.length === npuCount) {
-        onLog('info', `Leitura estruturada: ${structured.length} protocolos`);
-        apiResults = structured.map(buildApiResult).filter(Boolean);
-      } else {
-        onLog('warning', `Leitura estruturada: ${structured.length} protocolos (NPUs=${npuCount}), ignorado`);
-      }
-    } else if (structured && typeof structured === 'object' && structured.npu) {
-      const r = buildApiResult(structured);
-      if (r) apiResults = [r];
-    }
-  }
-
-  // Modo agência
-  if (modoAgencia && apiResults && apiResults.length) {
-    const results = [];
-    for (const r of apiResults) {
-      let npu = r.npu;
-      if (text) {
-        const tesseractNpu = ex.findNpu(text);
-        if (tesseractNpu) {
-          if (!npu) { npu = tesseractNpu; onLog('info', `NPU fallback Tesseract: "${tesseractNpu}"`); }
-          else if (tesseractNpu !== npu) { npu = tesseractNpu; onLog('warning', `NPU discordância: API="${r.npu}" vs Tesseract="${tesseractNpu}" — usando Tesseract`); }
-        }
-      }
-      let comarca = ex.fixComarcaByNpu(npu, r.comarca);
-      comarca = ex.vsjeFixSalvador(text || '', comarca);
-      let parte = r.parte;
-      if (parte && /COELBA|COMPANHIA\s+DE\s+ELETRICIDADE/i.test(parte)) {
-        onLog('info', `Parte COELBA ignorada: "${parte}"`);
-        parte = '';
-      }
-      results.push({ parte, npu, comarca, data: '', hora: '', ar: '', tipo: 'agencia' });
-    }
-    onLog('info', `Extraidos ${results.length} protocolos (modo agência)`);
-    return results;
-  }
-
   const results = [];
 
-  // Fallback agência: API falhou → Tesseract
-  if (modoAgencia && !results.length && text) {
-    onLog('warning', 'Modo agência: leitura estruturada falhou, tentando extração via Tesseract');
+  // Modo agência: usa a extração local do Tesseract.
+  if (modoAgencia && text) {
+    onLog('info', 'Modo agência: extraindo dados localmente via Tesseract');
     let npu = ex.findNpu(text) || '';
     if (npu) npu = ex.normalizeNpu(npu);
     let parte = ex.findPartes(text) || '';
@@ -151,28 +102,12 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
     onLog('info', `OCR concluído: usando OCR direto para ${npuCount} protocolo(s)`);
   }
 
-  // Quando o estruturado foi aceito, itera over apiResults (mesmo se as seções
-  // via texto forem menos — evita perder protocolos por seccionamento falho).
-  const loopLen = apiResults && apiResults.length ? Math.max(secTexts.length, apiResults.length) : secTexts.length;
-
-  for (let idx = 0; idx < loopLen; idx++) {
+  for (let idx = 0; idx < secTexts.length; idx++) {
     const secText = secTexts[idx] || '';
     let parte = ex.findPartes(secText) || '';
     let npu = '', comarca = '', data = '', hora = '', ar = '';
 
-    if (apiResults && apiResults[idx]) {
-      const r = apiResults[idx];
-      if ((!parte || parte.length < 5 || !parte.includes(' ')) && r.parte) {
-        const apiParte = r.parte.trim();
-        if (apiParte.length > parte.length) parte = apiParte;
-      }
-      npu = r.npu;
-      comarca = r.comarca;
-      data = r.data;
-      hora = r.hora;
-      ar = r.ar;
-    } else {
-      npu = ex.findNpu(secText) || '';
+    npu = ex.findNpu(secText) || '';
       if (npu) npu = ex.normalizeNpu(npu);
       parte = ex.findPartes(secText) || '';
       const prevTail = idx > 0 ? secTexts[idx - 1].slice(-800) : '';
@@ -203,18 +138,13 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
         }
         if (!modoAgencia && !ar) ar = ex.findArInText(textProc) || '';
       }
-    }
 
-    // AR final via API/OCR (pula em modo agência)
+    // AR final via OCR local (pula em modo agência)
     if (!modoAgencia && (!ar || ar.length !== 13)) {
       if (!images) images = await pdf.renderPages(filePath, 400);
-      onLog('dim', '  → Buscando AR via OCR...');
-      let arRemote = '';
-      try { arRemote = await ocr.findArRemote(images); } catch (e) {}
-      if (!arRemote || arRemote.length !== 13) {
-        arRemote = await ocr.findArInImages(images);
-      }
-      if (arRemote) ar = arRemote;
+      onLog('dim', '  → Buscando AR via OCR local...');
+      const arLocal = await ocr.findArInImages(images);
+      if (arLocal) ar = arLocal;
     }
 
     data = data || '';
@@ -227,23 +157,6 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
 
   onLog('info', `Extraidos ${results.length} protocolos: ${results.map(r => `${String(r.npu).slice(0, 15)} / ${String(r.comarca).slice(0, 20)}`).join(', ')}`);
   return results;
-}
-
-function buildApiResult(s) {
-  if (!s || typeof s !== 'object') return null;
-  let npu = s.npu ? ex.normalizeNpu(s.npu) : '';
-  if (npu) {
-    const digits = String(npu).replace(/\D/g, '');
-    if (!ex.isValidNpuCandidate(digits)) { npu = ''; }
-  }
-  return {
-    parte: s.parte || '',
-    npu,
-    comarca: s.comarca || '',
-    data: s.data || '',
-    hora: s.hora || '',
-    ar: s.ar || '',
-  };
 }
 
 // --- Nome do PDF de destino (cópia única por arquivo de origem) ---
@@ -292,43 +205,6 @@ async function processFiles(ctx, opts) {
 
   const totalFiles = files.length;
   clog('highlight', `Iniciando processamento de ${totalFiles} arquivo(s)`);
-
-  // Motor de extração externo (Python headless) — opcionalmente substitui o
-  // port JS para ficar 100% fiel ao app Python (10/10 AR). Ativado por padrão
-  // quando o exe está presente; desligável com python_engine.enabled=false no
-  // config.json. Se qualquer coisa falhar, cai de volta no port JS.
-  let pythonByFile = null;
-  const cfg0 = config.loadConfig() || {};
-  const wantPython = !cfg0.python_engine || cfg0.python_engine.enabled !== false;
-  if (wantPython && files.length) {
-    const eng = pythonEngine.findEngine();
-    if (eng) {
-      clog('dim', 'Usando motor de extração Python (modo externo)...');
-      try {
-        const pyOut = await pythonEngine.extract(files, { modoAgencia, onLog: clog });
-        if (pyOut && pyOut.ok) {
-          pythonByFile = new Map();
-          for (const r of (pyOut.results || [])) {
-            const fn = r.arquivo || r.source_file || '';
-            if (!fn) continue;
-            if (!pythonByFile.has(fn)) pythonByFile.set(fn, []);
-            pythonByFile.get(fn).push(r);
-          }
-          for (const e of (pyOut.errors || [])) {
-            addError(path.basename(e.pdf || ''), `Motor externo: ${e.error}`, 'Erro');
-          }
-        } else {
-          clog('warning', `Motor externo indisponível (${(pyOut && pyOut.error) || 'sem saída'}), usando port JS.`);
-        }
-      } catch (err) {
-        clog('warning', `Falha no motor externo: ${err}, usando port JS.`);
-        pythonByFile = null;
-      }
-    } else {
-      clog('dim', 'Motor externo não encontrado, usando port JS.');
-      pythonByFile = null;
-    }
-  }
 
   // Salva credenciais no config.json
   const cfg = config.loadConfig();
@@ -383,12 +259,7 @@ async function processFiles(ctx, opts) {
     clog('info', `${idx + 1}º Processando ${arquivoNome}`);
     try {
       clog('dim', '  → Lendo via OCR...');
-      let datas = null;
-      if (pythonByFile) {
-        datas = pythonByFile.get(arquivoNome) || null;
-        if (!datas) clog('warning', `  - Nenhum resultado do motor externo para ${arquivoNome}; tentando port JS.`);
-      }
-      if (!datas) datas = await processPdfMulti(p, { modoAgencia, onLog: clog });
+      const datas = await processPdfMulti(p, { modoAgencia, onLog: clog });
       const validNpus = [];
 
       for (const data of datas) {

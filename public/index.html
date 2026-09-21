@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EXTRATJUD - Hub Principal</title>
+    <title></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -141,14 +141,8 @@
 <body class="fade-in">
 
     <div class="topbar">
-        <div class="topbar-brand">
-            <i class="fa-solid fa-terminal" style="color: var(--primary);"></i>
-            EXTRATJUD
-        </div>
+        <div class="topbar-brand" aria-hidden="true"></div>
         <div class="topbar-actions">
-            <button id="btn-update-notify" class="btn btn-ghost btn-icon btn-sm" style="display:none;" title="Nova versão disponível">
-                <i class="fa-solid fa-arrow-up-from-bracket"></i>
-            </button>
             <button id="btn-open-settings" class="btn btn-ghost btn-icon btn-sm" title="Configurações">
                 <i class="fa-solid fa-gear"></i>
             </button>
@@ -157,58 +151,24 @@
 
     <div class="hub-container">
         <div class="hub-header">
-            <h1 class="hub-title">Hub Principal</h1>
-            <p class="hub-subtitle">Selecione o módulo de trabalho</p>
         </div>
 
         <div class="hub-grid">
             <a href="hub_servicos.html" class="hub-card slide-up stagger-1">
                 <div class="hub-card-icon"><i class="fa-solid fa-robot"></i></div>
                 <h3 class="hub-card-title">Robôs</h3>
-                <p class="hub-card-desc">Automação processual (PROJUDI, PJE) e extração de dados em massa.</p>
                 <div class="hub-card-arrow">Abrir módulo <i class="fa-solid fa-arrow-right"></i></div>
             </a>
 
-            <a href="#" onclick="event.preventDefault(); window.api.openExternal('https://an0mi-dot.github.io/Extrajud/')" class="hub-card slide-up stagger-2">
-                <div class="hub-card-icon"><i class="fa-solid fa-globe"></i></div>
-                <h3 class="hub-card-title">Portal</h3>
-                <p class="hub-card-desc">Acesse o portal, baixe atualizações e veja as novidades.</p>
-                <div class="hub-card-arrow">Visitar <i class="fa-solid fa-arrow-right"></i></div>
-            </a>
-
-            <a href="hub_servicos_extras.html" class="hub-card slide-up stagger-3">
-                <div class="hub-card-icon"><i class="fa-solid fa-folder-plus"></i></div>
-                <h3 class="hub-card-title">Serviços Extras</h3>
-                <p class="hub-card-desc">Ferramentas de apoio e criação de pastas em lote no SharePoint.</p>
-                <div class="hub-card-arrow">Abrir módulo <i class="fa-solid fa-arrow-right"></i></div>
-            </a>
             <a href="dashboard.html" class="hub-card slide-up stagger-4">
                 <div class="hub-card-icon"><i class="fa-solid fa-chart-line"></i></div>
                 <h3 class="hub-card-title">Dashboard</h3>
-                <p class="hub-card-desc">Histórico de execuções, fila de automações e métricas de uso.</p>
                 <div class="hub-card-arrow">Abrir <i class="fa-solid fa-arrow-right"></i></div>
             </a>
         </div>
     </div>
 
     <div class="version-tag">v<span id="app-version">?.?.?</span></div>
-
-    <!-- Update Modal -->
-    <div id="modal-update" class="modal-overlay">
-        <div class="modal">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-rocket" style="color: var(--warning);"></i> Atualização Disponível</h3>
-                <button class="modal-close" onclick="document.getElementById('modal-update').classList.remove('active')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p id="update-modal-info" style="margin:0;">Carregando...</p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-ghost" onclick="document.getElementById('modal-update').classList.remove('active')">Agora não</button>
-                <button id="btn-update-download" class="btn btn-primary"><i class="fa-solid fa-download"></i> Baixar</button>
-            </div>
-        </div>
-    </div>
 
     <!-- Settings Modal -->
     <div id="modal-settings" class="settings-overlay">
@@ -221,7 +181,6 @@
                 <div class="settings-nav">
                     <button class="settings-nav-btn active" data-tab="geral"><i class="fa-solid fa-wrench"></i> Geral</button>
                     <button class="settings-nav-btn" data-tab="logs"><i class="fa-solid fa-file-lines"></i> Logs</button>
-                    <button class="settings-nav-btn" data-tab="download"><i class="fa-solid fa-download"></i> Download</button>
                     <button class="settings-nav-btn" data-tab="sobre"><i class="fa-solid fa-circle-info"></i> Sobre</button>
                 </div>
                 <div class="settings-content">
@@ -257,26 +216,10 @@
                             </div>
                         </div>
                     </div>
-                    <div id="tab-download" class="settings-pane">
-                        <div style="text-align:center;">
-                            <h3 style="margin:0; color:var(--primary);">EXTRATJUD</h3>
-                            <p class="text-sm text-muted">v<span class="app-version">?.?.?</span></p>
-                            <div class="card mt-4" style="text-align:left;">
-                                <p class="text-sm mb-3">Acesse o portal para baixar a versão mais recente.</p>
-                                <button onclick="window.api.openExternal('https://an0mi-dot.github.io/Extrajud/')" class="btn btn-primary w-full"><i class="fa-solid fa-globe"></i> Portal</button>
-                            </div>
-                        </div>
-                    </div>
                     <div id="tab-sobre" class="settings-pane">
                         <div style="text-align:center;">
-                            <h3 style="margin:0; color:var(--primary); font-size:1.5rem;">EXTRATJUD</h3>
-                            <p class="text-sm font-mono text-muted">v<span id="settings-app-ver">?.?.?</span></p>
-                            <hr style="border:0; border-top:1px solid var(--border); margin:20px 0;">
-                            <div style="text-align:left; font-size:0.9rem; line-height:1.7;">
-                                <h4 style="color:var(--primary);">Sobre a Ferramenta</h4>
-                                <p>O <strong>EXTRATJUD</strong> é uma solução corporativa de automação robótica (RPA) para o setor jurídico da Neoenergia Coelba.</p>
-                                <p><strong>Nota Técnica:</strong> A ferramenta automatiza processos manuais nos portais judiciais, sem uso de APIs oficiais devido à indisponibilidade de acesso público.</p>
-                            </div>
+                            <h3 style="margin:0; color:var(--primary);">Sobre</h3>
+                            <p>Automação de tarefas judiciais.</p>
                             <div class="card mt-3" style="text-align:left;">
                                 <h4 style="font-size:0.9rem; margin:0 0 8px;"><i class="fa-solid fa-code" style="color:var(--primary);"></i> Ficha Técnica</h4>
                                 <ul style="margin:0; padding-left:18px; font-size:0.85rem; color:var(--text-secondary); line-height:1.8;">
@@ -289,7 +232,6 @@
                                 <p class="font-mono text-xs">Electron: <span id="env-electron">...</span> | Node: <span id="env-node">...</span> | Chrome: <span id="env-chrome">...</span></p>
                                 <p class="font-mono text-xs">OS: <span id="env-plat">...</span></p>
                             </div>
-                            <p class="text-xs text-muted mt-4">&copy; 2026 Neoenergia Coelba. Todos os direitos reservados.</p>
                         </div>
                     </div>
                 </div>
@@ -309,35 +251,6 @@
                     else if (el.classList.contains('app-version')) el.textContent = ver;
                 });
             } catch(e) {}
-
-            // Update check
-            const btnUpdateNotify = document.getElementById('btn-update-notify');
-            const modalUpdate = document.getElementById('modal-update');
-            let updateUrl = null;
-
-            function showUpdateBadge(newVer, url) {
-                updateUrl = url;
-                const info = document.getElementById('update-modal-info');
-                if (info) info.textContent = `Versão ${newVer} disponível.`;
-                if (btnUpdateNotify) btnUpdateNotify.style.display = 'flex';
-            }
-
-            window.api.on('updater:status', (data) => {
-                if (data.status === 'available' || data.status === 'ready') {
-                    showUpdateBadge(data.info?.version || '', null);
-                }
-            });
-
-            try {
-                const upd = await window.api.invoke('check-for-updates');
-                if (upd?.updateAvailable) showUpdateBadge(upd.latestVersion, upd.url);
-            } catch(e) {}
-
-            btnUpdateNotify?.addEventListener('click', () => modalUpdate?.classList.add('active'));
-            document.getElementById('btn-update-download')?.addEventListener('click', () => {
-                window.api.openExternal(updateUrl || 'https://an0mi-dot.github.io/Extrajud/');
-                modalUpdate?.classList.remove('active');
-            });
 
             // Settings
             const modalSettings = document.getElementById('modal-settings');

@@ -1,7 +1,7 @@
 {
   "name": "projudi_cita_inti",
   "version": "3.2.4",
-  "description": "Automação de extração de Citações e Intimações do Portal PROJUDI",
+  "description": "Ferramenta local de automação judicial",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -17,27 +17,18 @@
   "author": "João Guilherme Almeida Viana <joao.aviana@neoenergia.com>",
   "license": "ISC",
   "build": {
-    "appId": "com.neoenergia.extratjud",
-    "productName": "EXTRATJUD",
+    "appId": "local.judicial.tool",
+    "productName": " ",
     "win": {
       "target": [
         "nsis",
         "zip"
       ],
-      "icon": "public/assets/icon.ico",
+      "icon": "public/assets/icon_black.ico",
       "forceCodeSigning": false,
       "verifyUpdateCodeSignature": false,
-      "publish": [
-        "github"
-      ]
+      "publish": []
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "An0mi-dot",
-        "repo": "Extrajud"
-      }
-    ],
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -45,10 +36,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "EXTRATJUD",
-      "installerIcon": "public/assets/icon.ico",
-      "uninstallerIcon": "public/assets/icon.ico",
-      "installerHeaderIcon": "public/assets/icon.ico",
+      "shortcutName": " ",
+      "installerIcon": "public/assets/icon_black.ico",
+      "uninstallerIcon": "public/assets/icon_black.ico",
+      "installerHeaderIcon": "public/assets/icon_black.ico",
       "installerSidebar": "public/assets/installerSidebar.bmp",
       "uninstallerSidebar": "public/assets/installerSidebar.bmp",
       "installerHeader": "public/assets/installerHeader.bmp",
@@ -71,7 +62,6 @@
       "!protocolos_postais.html",
       "!history-service.js",
       "!installer.nsh",
-      "!updates.json",
       "!*.bat",
       "!*.ps1",
       "!*.ipynb",
@@ -120,7 +110,6 @@
     "@supabase/supabase-js": "^2.98.0",
     "cheerio": "^1.1.2",
     "dayjs": "^1.11.19",
-    "electron-updater": "^6.7.3",
     "exceljs": "^4.4.0",
     "pdfjs-dist": "^4.10.38",
     "playwright-core": "^1.57.0",

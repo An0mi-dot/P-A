@@ -1,30 +1,30 @@
 /* ============================================
-   EXTRATJUD - Design System v3.0
+    Local Design System
    Professional Technical UI
    ============================================ */
 
-/* --- Light Theme --- */
+/* --- Monochrome Theme --- */
 :root, [data-theme="light"] {
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
-    --primary-light: #dbeafe;
-    --primary-rgb: 37, 99, 235;
-    --success: #059669;
-    --success-light: #d1fae5;
-    --warning: #d97706;
-    --warning-light: #fef3c7;
-    --danger: #dc2626;
-    --danger-light: #fee2e2;
-    --bg: #f1f5f9;
-    --surface: #ffffff;
-    --surface-hover: #f8fafc;
-    --text: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #94a3b8;
-    --border: #e2e8f0;
-    --border-strong: #cbd5e1;
-    --log-bg: #0f172a;
-    --log-text: #e2e8f0;
+    --primary: #d1d5db;
+    --primary-hover: #f3f4f6;
+    --primary-light: rgba(209, 213, 219, 0.12);
+    --primary-rgb: 209, 213, 219;
+    --success: #a3a3a3;
+    --success-light: rgba(163, 163, 163, 0.12);
+    --warning: #d4d4d4;
+    --warning-light: rgba(212, 212, 212, 0.12);
+    --danger: #fca5a5;
+    --danger-light: rgba(252, 165, 165, 0.12);
+    --bg: #0b0b0c;
+    --surface: #151516;
+    --surface-hover: #222224;
+    --text: #f5f5f5;
+    --text-secondary: #b3b3b3;
+    --text-muted: #737373;
+    --border: #2d2d2f;
+    --border-strong: #454548;
+    --log-bg: #050505;
+    --log-text: #d4d4d4;
     --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
     --shadow-md: 0 4px 8px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
     --shadow-lg: 0 12px 24px -4px rgba(15, 23, 42, 0.1), 0 4px 8px -2px rgba(15, 23, 42, 0.04);
@@ -45,31 +45,31 @@
 
 /* --- Dark Theme --- */
 [data-theme="dark"] {
-    --primary: #3b82f6;
-    --primary-hover: #60a5fa;
-    --primary-light: rgba(59, 130, 246, 0.15);
-    --primary-rgb: 59, 130, 246;
-    --success: #34d399;
-    --success-light: rgba(52, 211, 153, 0.12);
-    --warning: #fbbf24;
-    --warning-light: rgba(251, 191, 36, 0.12);
-    --danger: #f87171;
-    --danger-light: rgba(248, 113, 113, 0.12);
-    --bg: #0b1120;
-    --surface: #111827;
-    --surface-hover: #1e293b;
-    --text: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --border: #1e293b;
-    --border-strong: #334155;
-    --log-bg: #030712;
-    --log-text: #cbd5e1;
+    --primary: #d1d5db;
+    --primary-hover: #f3f4f6;
+    --primary-light: rgba(209, 213, 219, 0.12);
+    --primary-rgb: 209, 213, 219;
+    --success: #a3a3a3;
+    --success-light: rgba(163, 163, 163, 0.12);
+    --warning: #d4d4d4;
+    --warning-light: rgba(212, 212, 212, 0.12);
+    --danger: #fca5a5;
+    --danger-light: rgba(252, 165, 165, 0.12);
+    --bg: #0b0b0c;
+    --surface: #151516;
+    --surface-hover: #222224;
+    --text: #f5f5f5;
+    --text-secondary: #b3b3b3;
+    --text-muted: #737373;
+    --border: #2d2d2f;
+    --border-strong: #454548;
+    --log-bg: #050505;
+    --log-text: #d4d4d4;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 4px 8px -2px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.5);
     --shadow-xl: 0 20px 40px -8px rgba(0, 0, 0, 0.6);
-    --card-hover-bg: #1e293b;
+    --card-hover-bg: #222224;
 }
 
 /* --- Global Reset & Base --- */
@@ -743,3 +743,91 @@ a:hover { color: var(--primary-hover); }
 .text-sm { font-size: 0.85rem; }
 .text-xs { font-size: 0.75rem; }
 .font-mono { font-family: var(--font-mono); }
+
+/* --- Rough prototype skin --- */
+body {
+    font-family: 'Courier New', 'Consolas', monospace;
+    background: #090909;
+    letter-spacing: 0;
+}
+
+button, input, select, textarea { border-radius: 0 !important; }
+
+.topbar {
+    height: 48px;
+    padding: 0 12px;
+    background: #111 !important;
+    border-bottom: 2px solid #666;
+}
+
+.topbar-brand,
+.sidebar-brand-text,
+.hub-title,
+.card-title,
+.settings-section-title {
+    font-family: 'Courier New', 'Consolas', monospace;
+    text-transform: uppercase;
+}
+
+.sidebar {
+    padding: 12px 10px;
+    gap: 8px;
+    background: #111;
+    border-right: 2px solid #555;
+}
+
+.main-content { padding: 12px; gap: 10px; }
+.hub-container { padding: 20px 12px; }
+.hub-header { margin-bottom: 22px; }
+.hub-title { font-size: 1.8rem; }
+
+.card,
+.hub-card,
+.status-bar,
+.terminal,
+.modal,
+.settings-modal {
+    border-radius: 0;
+    box-shadow: none;
+    border: 1px solid #555;
+}
+
+.card, .hub-card { padding: 14px; }
+.hub-card:hover, .card:hover { transform: none; box-shadow: none; border-color: #aaa; }
+.hub-card-icon { border-radius: 0; background: #292929; color: #ddd; }
+
+.btn {
+    border-radius: 0;
+    font-family: 'Courier New', 'Consolas', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    box-shadow: none !important;
+}
+
+.btn-primary { background: #d4d4d4; color: #111; }
+.btn-primary:hover:not(:disabled) { background: #fff; color: #000; }
+.btn-ghost { border-color: #666; }
+.btn-icon { border-radius: 0 !important; }
+
+.input {
+    border-color: #555;
+    font-family: 'Courier New', 'Consolas', monospace;
+    box-shadow: none !important;
+}
+.input:focus { border-color: #eee; }
+
+.terminal { border-color: #555; }
+.terminal-header { background: #191919; border-bottom-color: #555; }
+.terminal-dot { border-radius: 0; background: #777 !important; }
+.terminal-dot.red, .terminal-dot.yellow, .terminal-dot.green { background: #777; }
+.terminal-body { padding: 8px; font-size: 0.75rem; }
+.log-entry { border-radius: 0; }
+
+.modal-overlay, .settings-overlay { backdrop-filter: none; background: rgba(0, 0, 0, 0.82); }
+.modal-header, .settings-header { padding: 12px 14px; }
+.modal-body, .settings-content { padding: 14px; }
+.settings-nav-btn { font-family: 'Courier New', 'Consolas', monospace; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0b0b0b; }
+::-webkit-scrollbar-thumb { border-radius: 0; background: #555; }

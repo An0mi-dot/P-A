@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EXTRATJUD - Arquivados PROJUDI</title>
+    <title>Arquivados PROJUDI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -140,11 +140,10 @@
                     </div>
                     <div id="tab-sobre" class="settings-pane">
                         <div style="text-align:center;">
-                            <h3 style="margin:0; color:var(--primary);">EXTRATJUD</h3>
                             <p class="text-sm font-mono text-muted">v<span id="settings-app-ver">?.?.?</span></p>
                             <hr style="border:0; border-top:1px solid var(--border); margin:20px 0;">
                             <div style="text-align:left; font-size:0.9rem; line-height:1.7;">
-                                <p>O <strong>EXTRATJUD</strong> é uma solução RPA para o setor jurídico da Neoenergia Coelba.</p>
+                                <p>Automação de tarefas judiciais.</p>
                             </div>
                             <p class="text-xs text-muted mt-4 font-mono">Electron: <span id="env-electron">...</span> | Node: <span id="env-node">...</span> | OS: <span id="env-plat">...</span></p>
                         </div>
@@ -284,7 +283,7 @@
             scheduleSave();
             try {
                 const config = await window.api.invoke('get-general-config');
-                if (config.notificationFinish) new Notification('Extratjud', { body: `Arquivados: ${msgText}` });
+                if (config.notificationFinish) new Notification('', { body: `Arquivados: ${msgText}` });
                 if (config.soundFinish) {
                     const ctx = new (window.AudioContext || window.webkitAudioContext)();
                     const osc = ctx.createOscillator(); const gain = ctx.createGain();

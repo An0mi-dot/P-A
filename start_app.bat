@@ -3,10 +3,12 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 
-set HTTP_PROXY=http://B624140:JkhJkhGIT19!@proxyzsneoclb.neoenergia.net:80
-set HTTPS_PROXY=http://B624140:JkhJkhGIT19!@proxyzsneoclb.neoenergia.net:80
+set HTTP_PROXY=
+set HTTPS_PROXY=
+set http_proxy=
+set https_proxy=
 
-echo Abrindo EXTRATJUD...
+echo Abrindo...
 echo.
 
 "%CD%\node_bin\node.exe" "%CD%\node_modules\electron\cli.js" .

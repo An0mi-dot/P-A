@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer, shell } = require('electron');
 // Whitelist of allowed IPC channels
 const INVOKE_CHANNELS = [
     'load-app-state', 'set-general-config', 'get-general-config',
-    'get-app-version', 'get-machine-id', 'check-for-updates',
+    'get-app-version', 'get-machine-id',
     'dialog:openDirectory',
     'run-script', 'run-archived-script', 'stop-script',
     'pje:start-session', 'pje:cancel-session', 'pje:navigate-to-extraction',

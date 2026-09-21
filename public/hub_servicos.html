@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EXTRATJUD - Hub de Serviços</title>
+    <title>Serviços</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -153,9 +153,6 @@
             letter-spacing: 0.3px;
         }
 
-        .status-active { background: var(--success-light); color: var(--success); }
-        .status-soon { background: var(--warning-light); color: var(--warning); }
-        .status-dev { background: var(--primary-light); color: var(--primary); }
 
         /* Card em execução: borda colorida animada + selo PROCESSANDO */
         .service-card.is-running {
@@ -273,7 +270,7 @@
                     <i class="fa-solid fa-arrow-left"></i>
                 </button>
                 <div class="hub-topbar-brand">
-                    EXTRATJUD <span>SERVIÇOS</span>
+                    <span>SERVIÇOS</span>
                 </div>
             </div>
             <div class="topbar-actions">
@@ -284,19 +281,12 @@
         </div>
 
         <div class="hub-body">
-            <div class="hub-welcome fade-in">
-                <h2>Hub de Serviços</h2>
-                <p>Selecione uma ferramenta para iniciar a automação.</p>
-            </div>
-
             <div class="services-grid">
                 <a href="extrator_projudi.html" class="service-card slide-up stagger-1" data-process="projudi">
                     <span class="card-platform tag-projudi">PROJUDI</span>
                     <div class="card-icon"><i class="fa-solid fa-file-lines"></i></div>
                     <h3 class="card-title">Citações e Intimações</h3>
-                    <p class="card-desc">Extração automatizada de Citações e Intimações do Portal PROJUDI com geração de tabelas e evidências em PDF.</p>
                     <div class="card-meta">
-                        <span class="card-status status-active">Disponível</span>
                         <span class="card-time"><i class="fa-regular fa-clock"></i> ~2 min</span>
                         <span class="card-status card-running-badge"><span class="dot"></span>Processando</span>
                     </div>
@@ -307,9 +297,7 @@
                     <span class="card-platform tag-projudi">PROJUDI</span>
                     <div class="card-icon"><i class="fa-solid fa-box-archive"></i></div>
                     <h3 class="card-title">Processos Arquivados</h3>
-                    <p class="card-desc">Busca e extração em massa de processos arquivados para auditoria de histórico.</p>
                     <div class="card-meta">
-                        <span class="card-status status-active">Disponível</span>
                         <span class="card-time"><i class="fa-regular fa-clock"></i> Variável</span>
                         <span class="card-status card-running-badge"><span class="dot"></span>Processando</span>
                     </div>
@@ -320,32 +308,18 @@
                     <span class="card-platform tag-pje">PJE</span>
                     <div class="card-icon"><i class="fa-solid fa-gavel"></i></div>
                     <h3 class="card-title">Automação PJE</h3>
-                    <p class="card-desc">Extração de Expedientes PJE 1º e 2º Grau (Pendentes de Ciência e Resposta).</p>
                     <div class="card-meta">
-                        <span class="card-status status-soon">Em desenvolvimento</span>
                         <span class="card-time"><i class="fa-regular fa-clock"></i> --</span>
                         <span class="card-status card-running-badge"><span class="dot"></span>Processando</span>
                     </div>
                     <span class="running-rim"></span>
                 </a>
 
-                <div class="service-card disabled">
-                    <span class="card-platform tag-espaider">ESPAIDER</span>
-                    <div class="card-icon"><i class="fa-solid fa-credit-card"></i></div>
-                    <h3 class="card-title">Integração Espaider</h3>
-                    <p class="card-desc">Conector futuro para sincronização de dados e gestão jurídica no sistema Espaider.</p>
-                    <div class="card-meta">
-                        <span class="card-status status-soon">Em breve</span>
-                    </div>
-                </div>
-
                 <a href="protocolos_postais.html" class="service-card slide-up stagger-5" data-process="protocolo">
                     <span class="card-platform tag-rpa">RPA</span>
                     <div class="card-icon"><i class="fa-solid fa-envelopes-bulk"></i></div>
                     <h3 class="card-title">Leitura de Protocolos Postais</h3>
-                    <p class="card-desc">Automação da leitura e conferência de protocolos postais, substituindo o processo atualmente feito de forma manual.</p>
                     <div class="card-meta">
-                        <span class="card-status status-dev">Em desenvolvimento</span>
                         <span class="card-time"><i class="fa-regular fa-clock"></i> --</span>
                         <span class="card-status card-running-badge"><span class="dot"></span>Processando</span>
                     </div>
@@ -356,7 +330,7 @@
         </div>
 
         <div class="hub-footer">
-            Versão <span id="app-version">?.?.?</span> &mdash; &copy; 2026 Neoenergia Coelba
+            Versão <span id="app-version">?.?.?</span>
         </div>
     </div>
 
@@ -406,11 +380,10 @@
                     </div>
                     <div id="tab-sobre" class="settings-pane">
                         <div style="text-align:center;">
-                            <h3 style="margin:0; color:var(--primary);">EXTRATJUD</h3>
                             <p class="text-sm font-mono text-muted">v<span id="settings-app-ver">?.?.?</span></p>
                             <hr style="border:0; border-top:1px solid var(--border); margin:20px 0;">
                             <div style="text-align:left; font-size:0.9rem; line-height:1.7;">
-                                <p>O <strong>EXTRATJUD</strong> é uma solução RPA para o setor jurídico da Neoenergia Coelba.</p>
+                                <p>Automação de tarefas judiciais.</p>
                             </div>
                             <div class="card mt-3" style="text-align:left;">
                                 <h4 style="font-size:0.9rem; margin:0 0 8px;"><i class="fa-solid fa-code" style="color:var(--primary);"></i> Ficha Técnica</h4>
