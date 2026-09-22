@@ -16,6 +16,8 @@ function _cpus() {
 }
 
 let _nativeCmd = null;
+let _jsWorkerPromise = null;
+let _engineWarningShown = false;
 function _findNativeTesseract() {
   if (_nativeCmd) return _nativeCmd;
   let cfg = {};
@@ -25,6 +27,7 @@ function _findNativeTesseract() {
   const candidates = [
     _nativeCmd,
     process.env.TESSERACT_CMD,
+    path.join(process.env.LOCALAPPDATA || '', 'Tesseract-OCR', 'tesseract.exe'),
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Tesseract-OCR', 'tesseract.exe'),
     'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
     'C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe',
@@ -43,9 +46,42 @@ function _findNativeTesseract() {
   return null;
 }
 
+async function _getJsWorker() {
+  if (!_jsWorkerPromise) {
+    _jsWorkerPromise = (async () => {
+      const { createWorker } = require('tesseract.js');
+      return createWorker('por+eng', 1, {
+        langPath: TESSDATA,
+        gzip: false,
+        cacheMethod: 'none',
+        logger: () => {},
+      });
+    })().catch((error) => {
+      _jsWorkerPromise = null;
+      throw error;
+    });
+  }
+  return _jsWorkerPromise;
+}
+
+async function _runJsTesseract(pngBuffer) {
+  const worker = await _getJsWorker();
+  const result = await worker.recognize(pngBuffer, {}, { tessedit_pageseg_mode: '6' });
+  return result && result.data ? result.data.text || '' : '';
+}
+
 function _runNativeTesseract(pngBuffer, tessdataDir) {
   const exe = _findNativeTesseract();
-  if (!exe) return Promise.resolve('');
+  if (!exe) {
+    if (!_engineWarningShown) {
+      _engineWarningShown = true;
+      console.warn('[OCR] tesseract.exe não encontrado; usando tesseract.js local.');
+    }
+    return _runJsTesseract(pngBuffer).catch((error) => {
+      console.error('[OCR] Falha no tesseract.js local:', error && error.message ? error.message : error);
+      return '';
+    });
+  }
   const base = path.join(os.tmpdir(), 'tess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
   const pngPath = base + '.png';
   return new Promise((resolve) => {
@@ -74,6 +110,7 @@ async function ocrTesseract(images, preprocess = 'full', onPage) {
   const output = new Array(n);
   const concurrency = Math.max(1, Math.min(4, n, _cpus()));
   let next = 0;
+  let completed = 0;
   const workOne = async (index) => {
     const image = images[index];
     let text = '';
@@ -84,12 +121,18 @@ async function ocrTesseract(images, preprocess = 'full', onPage) {
       try { text = await _runNativeTesseract(pdf.toPng(image), TESSDATA); } catch (e) {}
     }
     output[index] = text || '';
-    if (onPage) { try { onPage(index + 1, n); } catch (e) {} }
+    completed += 1;
+    if (onPage) { try { onPage(completed, n); } catch (e) {} }
   };
   const workers = [];
   for (let worker = 0; worker < concurrency; worker++) {
     workers.push((async () => {
-      while (next < n) await workOne(next++);
+      while (true) {
+        const index = next;
+        next += 1;
+        if (index >= n) return;
+        await workOne(index);
+      }
     })());
   }
   await Promise.all(workers);
@@ -125,6 +168,9 @@ async function ocrMultiEngine(images, onPage) {
     if (hasKeyFields(softText)) return softText;
     results.push([softText, 'tesseract-soft']);
   }
+  // The JS fallback is much slower than the native binary. Keep its first
+  // useful pass instead of running two more full-page OCR passes.
+  if (!_nativeCmd) return softText.trim() ? softText : '';
   const fullText = await ocrTesseract(images, 'full', onPage);
   if (fullText.trim()) {
     if (hasKeyFields(fullText)) return fullText;
@@ -145,22 +191,17 @@ async function findArInImages(images) {
   for (const image of images) {
     try {
       const cropImage = pdf.cropImage(image, 0, Math.floor(image.height / 2), image.width, image.height);
-      const processed = img.preprocessSoft(image);
-      const processedText = await ocrTesseractSingle(processed);
-      const processedResult = ex.findArInText(processedText);
-      if (processedResult && processedResult.length === 13) return processedResult;
-
-      const rotatedText = await ocrTesseractSingle(pdf.rotate90(image), 'full');
-      const rotatedResult = ex.findArInText(rotatedText);
-      if (rotatedResult && rotatedResult.length === 13) return rotatedResult;
-
-      const cropText = await ocrTesseractSingle(cropImage, 'full');
+      const cropText = await ocrTesseractSingle(img.preprocessSoft(cropImage), 'none');
       const cropResult = ex.findArInText(cropText);
       if (cropResult && cropResult.length === 13) return cropResult;
-
-      if (processedResult && !bestResult) bestResult = processedResult;
-      if (rotatedResult && !bestResult) bestResult = rotatedResult;
       if (cropResult && !bestResult) bestResult = cropResult;
+
+      // Rotated AR labels are uncommon; pay for this pass only when the
+      // cheaper bottom-half scan did not find a candidate.
+      const rotatedText = await ocrTesseractSingle(pdf.rotate90(cropImage), 'soft');
+      const rotatedResult = ex.findArInText(rotatedText);
+      if (rotatedResult && rotatedResult.length === 13) return rotatedResult;
+      if (rotatedResult && !bestResult) bestResult = rotatedResult;
     } catch (e) {}
   }
   return bestResult;

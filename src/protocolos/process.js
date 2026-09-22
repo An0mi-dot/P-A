@@ -62,9 +62,30 @@ async function getOcrText(filePath, { onLog = () => {}, modoAgencia = false } = 
   const scanned = !(text && text.trim().length >= 50);
   let images = null;
   if (scanned) {
-    images = await pdf.renderPages(filePath, 400);
-    let ocrText = '';
-    try { ocrText = await ocr.ocrMultiEngine(images, (i, n) => onLog('dim', `  → Lendo via OCR... (página ${i + 1}/${n})`)); } catch (e) { onLog('error', `Erro na leitura do documento: ${e}`); }
+    const runOcr = async (dpi, message) => {
+      images = await pdf.renderPages(filePath, dpi);
+      let ocrText = '';
+      let reportedPages = 0;
+      onLog('dim', message);
+      try {
+        ocrText = await ocr.ocrMultiEngine(images, (completed, n) => {
+          if (completed <= n && completed > reportedPages) {
+            reportedPages = completed;
+            onLog('dim', `  → Lendo via OCR... (página ${completed}/${n})`);
+          }
+        });
+      } catch (e) { onLog('error', `Erro na leitura do documento: ${e}`); }
+      return ocrText;
+    };
+
+    let ocrText = await runOcr(400, '  → Lendo via OCR (400 DPI)...');
+    // Aumenta a resolução apenas quando a primeira leitura não encontra
+    // nenhum NPU. Assim documentos normais continuam rápidos e PDFs difíceis
+    // ganham uma segunda chance sem depender de serviço externo.
+    if (!ex.findAllNpuPositions(ocrText).length) {
+      onLog('warning', '  → Nenhum NPU encontrado; repetindo OCR em 500 DPI...');
+      ocrText = await runOcr(500, '  → Lendo via OCR (500 DPI)...');
+    }
     text = (text ? text + '\n' : '') + ocrText;
   }
   return { text, images };
@@ -245,6 +266,11 @@ async function processFiles(ctx, opts) {
   const fb = new FallbackConsultant();
   await fb.ready;
   fb._normalize();
+  if (fb.error) {
+    clog('warning', `Fallback de comarca indisponível: ${fb.error}`);
+  } else {
+    clog('dim', 'Fallback de escritório por comarca carregado.');
+  }
 
   let consecutiveErrors = 0;
   let totalEspaiderCalls = 0;
@@ -267,9 +293,10 @@ async function processFiles(ctx, opts) {
         const issues = applyMissingValueLabels(data, arquivoNome);
         const npu = (data.npu || '').trim();
         const comarca = (data.comarca || '').trim();
+        const hasValidNpu = npu && !/não identificado|nao identificado/i.test(npu);
         const dupKey = duplicateKey(data);
 
-        if (npu && !npu.toLowerCase().includes('não identificado') && !npu.toLowerCase().includes('nao identificado')) {
+        if (hasValidNpu) {
           if (seenNpus.has(npu)) {
             clog('warning', `  - NPU duplicado ignorado: ${npu}`);
             addError(arquivoNome, 'NPU duplicado', 'Ignorado');
@@ -285,10 +312,10 @@ async function processFiles(ctx, opts) {
         if (dupKey) seenProcesses.add(dupKey);
 
         if (issues.length) addError(arquivoNome, issues.join('; '), 'Ajustado');
-        if (npu && !npu.toLowerCase().includes('não identificado') && !npu.toLowerCase().includes('nao identificado')) validNpus.push(npu);
+        if (hasValidNpu) validNpus.push(npu);
 
         let escritorio = '';
-        if (espaiderOk && npu) {
+        if (espaiderOk && hasValidNpu) {
           if (totalEspaiderCalls > 0 && totalEspaiderCalls % 35 === 0) {
             clog('dim', `  - Reiniciando Espaider (lote de ${totalEspaiderCalls} consultas)`);
             await forceEspaiderRestart();

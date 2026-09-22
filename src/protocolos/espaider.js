@@ -172,12 +172,19 @@ class EspaiderAutomator {
     try { await loc.press('Control+a'); } catch (e) {}
     try { await loc.press('Backspace'); } catch (e) {}
     await loc.fill(text);
+    try {
+      await loc.evaluate((el) => {
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    } catch (e) {}
     if (pressEnter) await loc.press('Enter');
   }
 
   async searchNpu(npu) {
     if (!this.page) return '';
-    try {
+    const timeoutMs = 20000;
+    const operation = async () => {
       const filterIn = await this._ensureFilter();
       if (!filterIn) return '';
 
@@ -203,7 +210,14 @@ class EspaiderAutomator {
         }
       }
       return escritorio;
+    };
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('consulta excedeu 20 segundos')), timeoutMs)),
+      ]);
     } catch (e) {
+      this._filterLocator = null;
       console.error(`Search NPU fail for ${npu}: ${e}`);
       return '';
     }

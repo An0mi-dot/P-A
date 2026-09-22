@@ -8,7 +8,9 @@ const ExcelJS = require('exceljs');
 const { removeAccents } = require('./extractor');
 const config = require('./config_loader');
 
-// Acha a planilha (Comarcas JEC ...) na pasta do app
+const EXPECTED_SPREADSHEET = 'Comarcas JEC CÍVEL E ADV RESPONSÁVEIS 2026.xlsx revisado Patricia Pellegrini.xlsx';
+
+// Acha a planilha de fallback na pasta do app.
 function findSpreadsheet() {
   const dirs = [];
   try { dirs.push(config.projectRoot()); } catch (e) {}
@@ -17,7 +19,10 @@ function findSpreadsheet() {
   for (const d of dirs) {
     try {
       if (!fs.existsSync(d)) continue;
-      for (const f of fs.readdirSync(d)) {
+      const files = fs.readdirSync(d);
+      const exact = files.find((f) => f.toLowerCase() === EXPECTED_SPREADSHEET.toLowerCase());
+      if (exact) return path.join(d, exact);
+      for (const f of files) {
         if (/Comarcas JEC.*\.xlsx$/i.test(f)) return path.join(d, f);
       }
     } catch (e) {}
@@ -42,16 +47,16 @@ class FallbackConsultant {
     try {
       const wb = new ExcelJS.Workbook();
       await wb.xlsx.readFile(p);
-      this.dfComarcas = await this._readSheet(wb, 'COMARCAS x ESCRITÓRIOS', 4);
-      this.dfJuizados = await this._readSheet(wb, 'SALVADOR JUIZADOS X ESCRITORIOS', 1);
+      this.dfComarcas = await this._readSheet(wb, ['COMARCAS x ESCRITÓRIOS', 'COMARCAS X ESCRITORIOS'], 4);
+      this.dfJuizados = await this._readSheet(wb, ['SALVADOR JUIZADOS X ESCRITORIOS', 'SALVADOR JUIZADOS X ESCRITÓRIOS'], 1);
       this.loaded = true;
     } catch (e) {
       this.error = e.message || String(e);
     }
   }
 
-  async _readSheet(wb, name, skipRows) {
-    const ws = wb.getWorksheet(name);
+  async _readSheet(wb, names, skipRows) {
+    const ws = names.map(name => wb.getWorksheet(name)).find(Boolean);
     if (!ws) return [];
     const rows = [];
     ws.eachRow((row, rowNumber) => {
@@ -72,7 +77,7 @@ class FallbackConsultant {
   }
 
   _normalize() {
-    this.dfComarcas = this.dfComarcas.map(r => ({ ...r, COMARCA_NORM: removeAccents((r.COMARCAS || '').replace(/\s+/g, ' ').trim().toUpperCase()) }));
+    this.dfComarcas = this.dfComarcas.map(r => ({ ...r, COMARCA_NORM: removeAccents((r.COMARCAS || r.COMARCA || '').replace(/\s+/g, ' ').trim().toUpperCase()) }));
     this.dfJuizados = this.dfJuizados.map(r => ({ ...r, JUIZADO_NORM: removeAccents((r.JUIZADO || '').replace(/\s+/g, ' ').trim().toUpperCase()) }));
   }
 
@@ -100,7 +105,7 @@ class FallbackConsultant {
 
     const exact = this.dfComarcas.filter(r => r.COMARCA_NORM === normC);
     if (exact.length) {
-      const col = 'ESCRITÓRIO' in exact[0] ? 'ESCRITÓRIO' : Object.keys(exact[0])[1];
+      const col = this._officeColumn(exact[0]);
       const val = (exact[0][col] || '').trim();
       if (/OLHAR A ABA|DIVIDIDOS POR|SÃO DO ESCRITÓRIO|PROCESSOS CÍVEIS|PROCESSOS CIVEIS/i.test(val.toUpperCase())) return '';
       return val;
@@ -110,12 +115,17 @@ class FallbackConsultant {
       return normC.startsWith(x) || x.startsWith(normC) || normC.includes(x) || x.includes(normC);
     });
     if (partial.length) {
-      const col = 'ESCRITÓRIO' in partial[0] ? 'ESCRITÓRIO' : Object.keys(partial[0])[1];
+      const col = this._officeColumn(partial[0]);
       const val = (partial[0][col] || '').trim();
       if (/OLHAR A ABA|DIVIDIDOS POR|SÃO DO ESCRITÓRIO|PROCESSOS CÍVEIS|PROCESSOS CIVEIS/i.test(val.toUpperCase())) return '';
       return val;
     }
     return '';
+  }
+
+  _officeColumn(row) {
+    const key = Object.keys(row).find((name) => /ESCRIT[ÓO]RIO|RESPONSAVEL|RESPONSÁVEL/i.test(name));
+    return key || Object.keys(row)[1] || '';
   }
 }
 
