@@ -25,21 +25,26 @@ function _findNativeTesseract() {
   const candidates = [
     _nativeCmd,
     process.env.TESSERACT_CMD,
+    'C:\\Users\\B624140\\AppData\\Local\\Tesseract-OCR\\tesseract.exe', // User-provided path
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Tesseract-OCR', 'tesseract.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Tesseract-OCR', 'tesseract.exe'), // Added to catch if "Programs" is missing
     'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
     'C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe',
     path.join(user, 'Desktop', 'PROG', 'protocolos_postais', 'bin', 'tesseract', 'tesseract.exe'),
     path.join(user, 'Desktop', 'PROG', 'protocolos_postais', 'dist', 'ProtocolosPostais', '_internal', 'bin', 'tesseract', 'tesseract.exe'),
   ];
+  console.log('[OCR] Searching for Tesseract in candidates:', candidates);
   for (const candidate of candidates) {
     try {
       if (candidate && fs.existsSync(candidate)) {
         _nativeCmd = candidate;
+        console.log('[OCR] Found native Tesseract at:', _nativeCmd);
         return candidate;
       }
     } catch (e) {}
   }
   _nativeCmd = null;
+  console.warn('[OCR] Native Tesseract not found in any candidate path.');
   return null;
 }
 
@@ -55,7 +60,7 @@ function _runNativeTesseract(pngBuffer, tessdataDir) {
       execFile(exe, args, { cwd: path.dirname(exe), maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => {
         try { fs.unlinkSync(pngPath); } catch (e) {}
         try { fs.unlinkSync(base + '.txt'); } catch (e) {}
-        if (error) { resolve(''); return; }
+        if (error) { console.error('[OCR] Tesseract execution error:', error); resolve(''); return; }
         resolve(stdout || '');
       });
     });
