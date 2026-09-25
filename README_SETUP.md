@@ -306,6 +306,32 @@ Se tiver problemas:
 
 ---
 
+## 📬 Protocolos Postais e Tesseract OCR
+
+O módulo de Protocolos Postais utiliza OCR para leitura e extração de dados (NPUs, partes, comarcas, audiências e ARs) de PDFs digitalizados.
+
+### 1. Detecção Automática do Tesseract
+O sistema detecta o Tesseract automaticamente na seguinte ordem:
+1. Configuração salva em `config.json` (`tesseract_cmd`) ou selecionada na interface gráfica.
+2. Variáveis de ambiente `TESSERACT_CMD` e `TESSERACT_PATH`.
+3. Executável no `PATH` do sistema (`where.exe tesseract`).
+4. Pasta local do repositório: `bin/tesseract/tesseract.exe`.
+5. Instalação de usuário (sem permissão de administrador): `%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe`.
+6. Pastas padrão do sistema: `C:\Program Files\Tesseract-OCR\tesseract.exe` (ou em outras unidades C:, D:, E:, F:).
+
+### 2. Uso em Máquinas Corporativas (Sem Admin / UAC)
+Se não for possível executar instaladores convencionais:
+1. Baixe o instalador do Tesseract (ex.: UB-Mannheim 64-bit).
+2. Abra-o com o **7-Zip** e extraia o conteúdo.
+3. Mova a pasta extraída para `%LOCALAPPDATA%\Programs\Tesseract-OCR` ou para `bin/tesseract` dentro do projeto.
+4. Na tela de Protocolos Postais, você pode também clicar no botão **"Alterar..."** e apontar diretamente para o arquivo `tesseract.exe`.
+
+### 3. Planilha de Fallback (Comarcas e Escritórios)
+Se um processo não tiver escritório cadastrado no Espaider, o sistema busca a planilha de comarcas automaticamente em:
+- Caminho definido em `config.json` (`fallback_spreadsheet`).
+- `Desktop/TRABALHO/*.xlsx` ou na pasta do projeto.
+
+---
+
 **Status:** ✅ Pronto para usar  
-**Atualizado:** 11 de Maio de 2026  
-**Compatível com:** Windows 7+ (64-bit e 32-bit)
+**Compatível com:** Windows 10/11 (64-bit)

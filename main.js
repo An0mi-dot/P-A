@@ -1415,14 +1415,18 @@ function runProtoWorker(win, kind, opts) {
 
 protoConfig.loadConfig();
 
-// Config (usuario/mascara senha/pasta)
+// Config (usuario/mascara senha/pasta/tesseract)
 ipcMain.handle('proto:config', async (event) => {
     const cfg = protoConfig.loadConfig();
+    const ocr = require('./src/protocolos/ocr');
+    const tess = ocr.getTesseractInfo();
     return {
         user: cfg.user || '',
         pwd: cfg.pwd ? '********' : '',
         pwdSet: !!cfg.pwd,
         output_folder: cfg.output_folder || '',
+        tesseract_cmd: cfg.tesseract_cmd || cfg.tesseract_path || '',
+        tesseract_detected: tess.path || '',
     };
 });
 
@@ -1431,8 +1435,21 @@ ipcMain.handle('proto:save-config', async (event, data = {}) => {
     if (typeof data.user === 'string') cfg.user = data.user;
     if (typeof data.pwd === 'string' && data.pwd && data.pwd !== '********') cfg.pwd = data.pwd;
     if (typeof data.output_folder === 'string' && data.output_folder) cfg.output_folder = data.output_folder;
+    if (typeof data.tesseract_cmd === 'string') cfg.tesseract_cmd = data.tesseract_cmd.trim();
     const res = protoConfig.saveConfig(cfg);
     return res.ok ? { ok: true } : { ok: false, error: res.error };
+});
+
+ipcMain.handle('proto:pick-tesseract', async (event, currentPath = '') => {
+    const win = protoWin(event);
+    const r = await dialog.showOpenDialog(win, {
+        title: 'Selecionar executável do Tesseract (tesseract.exe)',
+        defaultPath: currentPath || undefined,
+        filters: [{ name: 'Executável Tesseract', extensions: ['exe'] }],
+        properties: ['openFile'],
+    });
+    if (r.canceled || !r.filePaths.length) return null;
+    return r.filePaths[0];
 });
 
 // Dialogo de selecao de pasta

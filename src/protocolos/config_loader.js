@@ -15,9 +15,11 @@ function candidatePaths() {
     const { app } = require('electron');
     if (app && app.getPath) list.push(path.join(app.getPath('userData'), 'protocolos_config.json'));
   } catch (e) {}
-  // 2) Dev — pasta raiz do EXTRATJUD
+  // 2) Raiz do projeto (P-A/config.json)
+  list.push(path.join(__dirname, '..', '..', 'config.json'));
+  // 3) Dev — pasta Externo do projeto
   list.push(path.join(__dirname, '..', '..', 'Externo', 'ProtocolosPostais', 'config.json'));
-  // 3) Empacotado (extraResources) — resourcesPath
+  // 4) Empacotado (extraResources) — resourcesPath
   try {
     if (process.resourcesPath) list.push(path.join(process.resourcesPath, 'Externo', 'ProtocolosPostais', 'config.json'));
   } catch (e) {}

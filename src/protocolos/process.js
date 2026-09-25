@@ -58,48 +58,72 @@ function duplicateKey(data) {
 // (===PAGE=== / expectedByPages / pares de 2 páginas) — removidas do port fiel.
 async function getOcrText(filePath, { onLog = () => {}, modoAgencia = false } = {}) {
   let text = '';
-  try { text = await pdf.extractTextPdf(filePath); } catch (e) {}
+  let pageTexts = [];
+  try {
+    const { getDocument } = await pdf.getPdfjs();
+    const data = new Uint8Array(fs.readFileSync(filePath));
+    const pdfDoc = await getDocument({ data }).promise;
+    for (let p = 1; p <= pdfDoc.numPages; p++) {
+      const page = await pdfDoc.getPage(p);
+      const content = await page.getTextContent();
+      let out = '';
+      for (const item of content.items) { if (item.str) out += item.str + ' '; }
+      pageTexts.push(out.trim());
+      page.cleanup();
+    }
+    await pdfDoc.destroy();
+    text = pageTexts.join('\n');
+  } catch (e) {}
+
   const scanned = !(text && text.trim().length >= 50);
   let images = null;
   if (scanned) {
+    pageTexts = [];
     const runOcr = async (dpi, message) => {
       images = await pdf.renderPages(filePath, dpi);
       let ocrText = '';
+      let ocrPages = [];
       let reportedPages = 0;
+      let lastStage = '';
       onLog('dim', message);
       try {
-        ocrText = await ocr.ocrMultiEngine(images, (completed, n) => {
+        const ocrResult = await ocr.ocrMultiEngine(images, (completed, n, stage) => {
+          if (stage && stage !== lastStage) {
+            lastStage = stage;
+            reportedPages = 0;
+          }
           if (completed <= n && completed > reportedPages) {
             reportedPages = completed;
-            onLog('dim', `  → Lendo via OCR... (página ${completed}/${n})`);
+            const stageDesc = stage === 'aggressive' ? ' [modo profundo]' : (stage === 'full' ? ' [modo completo]' : '');
+            onLog('dim', `  → Lendo via OCR... (página ${completed}/${n})${stageDesc}`);
           }
         });
+        ocrText = String(ocrResult || '');
+        ocrPages = (ocrResult && ocrResult.pages) || [];
       } catch (e) { onLog('error', `Erro na leitura do documento: ${e}`); }
-      return ocrText;
+      return { ocrText, ocrPages };
     };
 
-    let ocrText = await runOcr(400, '  → Lendo via OCR (400 DPI)...');
-    // Aumenta a resolução apenas quando a primeira leitura não encontra
-    // nenhum NPU. Assim documentos normais continuam rápidos e PDFs difíceis
-    // ganham uma segunda chance sem depender de serviço externo.
+    let { ocrText, ocrPages } = await runOcr(400, '  → Lendo via OCR (400 DPI)...');
     if (!ex.findAllNpuPositions(ocrText).length) {
       onLog('warning', '  → Nenhum NPU encontrado; repetindo OCR em 500 DPI...');
-      ocrText = await runOcr(500, '  → Lendo via OCR (500 DPI)...');
+      const secondTry = await runOcr(500, '  → Lendo via OCR (500 DPI)...');
+      if (ex.findAllNpuPositions(secondTry.ocrText).length) {
+        ocrText = secondTry.ocrText;
+        ocrPages = secondTry.ocrPages;
+      }
     }
     text = (text ? text + '\n' : '') + ocrText;
+    pageTexts = ocrPages;
   }
-  return { text, images };
+  return { text, images, pageTexts };
 }
 
-// Port de process_pdf_multi (sem EasyOCR)
-async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {} } = {}) {  const { text, images: cachedImages } = await getOcrText(filePath, { onLog, modoAgencia });
+// Processamento de PDF multi-protocolo com suporte a documentos frente/verso (2 páginas por protocolo)
+async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {} } = {}) {
+  const { text, images: cachedImages, pageTexts: rawPageTexts } = await getOcrText(filePath, { onLog, modoAgencia });
   let images = cachedImages;
-  let npuCount = 0;
-
-  const npuPositions = text ? ex.findAllNpuPositions(text) : [];
-  npuCount = npuPositions.length;
-  let secTexts = text ? ex.splitTextByProtocol(text) : [];
-
+  const pageTexts = rawPageTexts || [];
   const results = [];
 
   // Modo agência: usa a extração local do Tesseract.
@@ -119,6 +143,67 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
     return results;
   }
 
+  // Identifica se o documento segue o padrão típico de 2 páginas por protocolo (frente e verso)
+  let isPaired = false;
+  if (!modoAgencia && pageTexts.length >= 2 && images && images.length >= 2) {
+    let frontHasNpu = 0;
+    const pairCount = Math.floor(pageTexts.length / 2);
+    for (let p = 0; p < pairCount; p++) {
+      const front = pageTexts[p * 2] || '';
+      if (ex.findNpu(front)) frontHasNpu++;
+    }
+    if (frontHasNpu > 0 && frontHasNpu >= Math.ceil(pairCount * 0.5)) {
+      isPaired = true;
+    }
+  }
+
+  if (isPaired) {
+    const pairCount = Math.floor(pageTexts.length / 2);
+    onLog('info', `Estrutura de frente e verso identificada: ${pairCount} protocolo(s) em ${pageTexts.length} páginas`);
+
+    for (let k = 0; k < pairCount; k++) {
+      const frontIdx = k * 2;
+      const backIdx = k * 2 + 1;
+      const frontText = pageTexts[frontIdx] || '';
+      const backText = pageTexts[backIdx] || '';
+      const secText = frontText + '\n' + backText;
+
+      let npu = ex.findNpu(frontText) || ex.findNpu(secText) || '';
+      if (npu) npu = ex.normalizeNpu(npu);
+      let parte = ex.findPartes(frontText) || ex.findPartes(secText) || '';
+      let comarca = ex.findComarca(frontText) || ex.findComarca(secText) || '';
+      const [d, h] = ex.findAudienciaDatetime(frontText) || ex.findAudienciaDatetime(secText);
+      let data = d || '';
+      let hora = h || '';
+
+      // AR é prioritariamente do verso (backText)
+      let ar = ex.findArInText(backText) || ex.findArInText(frontText) || '';
+
+      // Se o AR não foi identificado no texto, busca via OCR focalizado na imagem do verso
+      if (!ar || ar.length !== 13) {
+        const protocolImages = [images[backIdx], images[frontIdx]].filter(Boolean);
+        onLog('dim', `  → Buscando AR via OCR no verso do protocolo #${k + 1}...`);
+        const arLocal = await ocr.findArInImages(protocolImages);
+        if (arLocal) ar = arLocal;
+      }
+
+      data = data || '';
+      hora = hora || '';
+      npu = ex.tryFixNpuYear(npu, data);
+      comarca = ex.fixComarcaByNpu(npu, comarca);
+
+      results.push({ parte, npu, comarca, data, hora, ar: ar || '', tipo: 'postal' });
+    }
+
+    onLog('info', `Extraídos ${results.length} protocolos: ${results.map(r => `${String(r.npu).slice(0, 15)} / ${String(r.comarca).slice(0, 20)}`).join(', ')}`);
+    return results;
+  }
+
+  // Fallback padrão: delimitação de protocolos via splitTextByProtocol
+  const npuPositions = text ? ex.findAllNpuPositions(text) : [];
+  const npuCount = npuPositions.length;
+  let secTexts = text ? ex.splitTextByProtocol(text) : [];
+
   if (npuCount > 0) {
     onLog('info', `OCR concluído: usando OCR direto para ${npuCount} protocolo(s)`);
   }
@@ -126,46 +211,49 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
   for (let idx = 0; idx < secTexts.length; idx++) {
     const secText = secTexts[idx] || '';
     let parte = ex.findPartes(secText) || '';
-    let npu = '', comarca = '', data = '', hora = '', ar = '';
+    let npu = ex.findNpu(secText) || '';
+    if (npu) npu = ex.normalizeNpu(npu);
 
-    npu = ex.findNpu(secText) || '';
-      if (npu) npu = ex.normalizeNpu(npu);
-      parte = ex.findPartes(secText) || '';
-      const prevTail = idx > 0 ? secTexts[idx - 1].slice(-800) : '';
-      const comarcaText = prevTail + secText;
-      comarca = ex.findComarca(comarcaText) || '';
-      const [d, h] = ex.findAudienciaDatetime(secText);
-      data = d || '';
-      hora = h || '';
-      ar = ex.findArInText(secText) || '';
+    // Busca comarca primariamente no próprio trecho do protocolo
+    let comarca = ex.findComarca(secText) || '';
+    if (!comarca && idx > 0) {
+      const prevTail = secTexts[idx - 1].slice(-400);
+      comarca = ex.findComarca(prevTail) || '';
+    }
 
-      const missingCore = !npu || !parte || !comarca;
-      const missingExtra = modoAgencia ? false : (!data || !hora);
-      if (missingCore || missingExtra) {
-        if (!images) images = await pdf.renderPages(filePath, 400);
-        const img = require('./image');
-        const processed = images.map((im) => img.preprocessFull(im));
-        let textProc = '';
-        try { textProc = await ocr.ocrTesseract(processed, 'none'); } catch (e) {}
-        if (!data || !hora) {
-          const [d2, h2] = ex.findAudienciaDatetime(textProc);
-          if (d2) data = d2;
-          if (h2) hora = h2;
-        }
-        if (!npu) { npu = ex.findNpu(textProc) || ''; if (npu) npu = ex.normalizeNpu(npu); }
-        if (!comarca) {
-          const comarcaText2 = prevTail ? prevTail + textProc : textProc;
-          comarca = ex.findComarca(comarcaText2) || '';
-        }
-        if (!modoAgencia && !ar) ar = ex.findArInText(textProc) || '';
+    const [d, h] = ex.findAudienciaDatetime(secText);
+    let data = d || '';
+    let hora = h || '';
+    let ar = ex.findArInText(secText) || '';
+
+    const missingCore = !npu || !parte || !comarca;
+    const missingExtra = modoAgencia ? false : (!data || !hora);
+    if ((missingCore || missingExtra) && images && images.length) {
+      const img = require('./image');
+      const processed = images.map((im) => img.preprocessFull(im));
+      let textProc = '';
+      try {
+        const procRes = await ocr.ocrTesseract(processed, 'none');
+        textProc = String(procRes || '');
+      } catch (e) {}
+      if (!data || !hora) {
+        const [d2, h2] = ex.findAudienciaDatetime(textProc);
+        if (d2) data = d2;
+        if (h2) hora = h2;
       }
+      if (!npu) { npu = ex.findNpu(textProc) || ''; if (npu) npu = ex.normalizeNpu(npu); }
+      if (!comarca) { comarca = ex.findComarca(textProc) || ''; }
+      if (!modoAgencia && !ar) ar = ex.findArInText(textProc) || '';
+    }
 
-    // AR final via OCR local (pula em modo agência)
+    // AR final via OCR local focalizado
     if (!modoAgencia && (!ar || ar.length !== 13)) {
-      if (!images) images = await pdf.renderPages(filePath, 400);
-      onLog('dim', '  → Buscando AR via OCR local...');
-      const arLocal = await ocr.findArInImages(images);
-      if (arLocal) ar = arLocal;
+      if (!images && filePath) images = await pdf.renderPages(filePath, 400);
+      if (images && images.length) {
+        onLog('dim', `  → Buscando AR via OCR local (protocolo #${idx + 1})...`);
+        const arLocal = await ocr.findArInImages(images);
+        if (arLocal) ar = arLocal;
+      }
     }
 
     data = data || '';
@@ -176,7 +264,7 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
     results.push({ parte, npu, comarca, data, hora, ar: ar || '', tipo: modoAgencia ? 'agencia' : 'postal' });
   }
 
-  onLog('info', `Extraidos ${results.length} protocolos: ${results.map(r => `${String(r.npu).slice(0, 15)} / ${String(r.comarca).slice(0, 20)}`).join(', ')}`);
+  onLog('info', `Extraídos ${results.length} protocolos: ${results.map(r => `${String(r.npu).slice(0, 15)} / ${String(r.comarca).slice(0, 20)}`).join(', ')}`);
   return results;
 }
 
@@ -234,6 +322,14 @@ async function processFiles(ctx, opts) {
     cfg.pwd = pwd;
     cfg.output_folder = outputFolder;
     config.saveConfig(cfg);
+  }
+
+  // Tesseract OCR status
+  const tessInfo = ocr.getTesseractInfo();
+  if (tessInfo.available) {
+    clog('dim', `Tesseract OCR nativo pronto: ${tessInfo.path}`);
+  } else {
+    clog('warning', 'tesseract.exe não localizado nas pastas padrão. Tentando fallback...');
   }
 
   // Espaider
@@ -343,7 +439,15 @@ async function processFiles(ctx, opts) {
         data.arquivo = arquivoNome;
         data.source_file = arquivoNome;
         results.push(data);
-        clog('success', `  - OK: Parte=${data.parte || ''} | NPU=${data.npu || '(sem NPU)'} | Comarca=${data.comarca || ''} | Data/Hora=${data.data || ''} ${data.hora || ''} | AR=${data.ar || '(sem AR)'} | Escritório=${data.escritorio || '(vazio)'}`);
+        if (hasValidNpu) {
+          clog('success', `  - OK: Parte=${data.parte || ''} | NPU=${data.npu || ''} | Comarca=${data.comarca || ''} | Data/Hora=${data.data || ''} ${data.hora || ''} | AR=${data.ar || '(sem AR)'} | Escritório=${data.escritorio || '(vazio)'}`);
+        } else {
+          clog('warning', `  - ⚠ Não identificado: Parte=${data.parte || ''} | NPU=${data.npu || '(sem NPU)'} | Comarca=${data.comarca || ''} | AR=${data.ar || '(sem AR)'}`);
+        }
+      }
+
+      if (!datas.length) {
+        clog('error', `  - Nenhum protocolo pôde ser extraído de ${arquivoNome}`);
       }
 
       // Cópia do PDF com nome dos NPUs

@@ -17,7 +17,7 @@ const INVOKE_CHANNELS = [
     'queue:clear-completed', 'queue:get-stats',
     'protocolos:get-status', 'protocolos:open',
     'proto:config', 'proto:save-config', 'proto:pick-folder',
-    'proto:pick-files', 'proto:save-file',
+    'proto:pick-files', 'proto:save-file', 'proto:pick-tesseract',
     'proto:process-files', 'proto:consultar-npus', 'proto:export-file', 'proto:cancel'
 ];
 

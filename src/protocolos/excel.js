@@ -10,12 +10,28 @@ const config = require('./config_loader');
 
 const EXPECTED_SPREADSHEET = 'Comarcas JEC CÍVEL E ADV RESPONSÁVEIS 2026.xlsx revisado Patricia Pellegrini.xlsx';
 
-// Acha a planilha de fallback na pasta do app.
+// Acha a planilha de fallback na pasta do app ou caminhos configurados.
 function findSpreadsheet() {
   const dirs = [];
+  try {
+    const cfg = config.loadConfig() || {};
+    if (cfg.fallback_spreadsheet && fs.existsSync(cfg.fallback_spreadsheet)) return cfg.fallback_spreadsheet;
+    if (cfg.spreadsheet_path && fs.existsSync(cfg.spreadsheet_path)) return cfg.spreadsheet_path;
+  } catch (e) {}
+
   try { dirs.push(config.projectRoot()); } catch (e) {}
+  try { dirs.push(path.join(__dirname, '..', '..')); } catch (e) {}
+  try { dirs.push(process.cwd()); } catch (e) {}
   try { dirs.push(path.join(__dirname, '..', '..', 'Externo', 'ProtocolosPostais')); } catch (e) {}
   try { if (process.resourcesPath) dirs.push(path.join(process.resourcesPath, 'Externo', 'ProtocolosPostais')); } catch (e) {}
+  const user = process.env.USERPROFILE || '';
+  if (user) {
+    dirs.push(path.join(user, 'Desktop', 'TRABALHO'));
+    dirs.push(path.join(user, 'Desktop', 'TRABALHO', 'P-A'));
+    dirs.push(path.join(user, 'Desktop'));
+    dirs.push(path.join(user, 'Desktop', 'PROG', 'protocolos_postais'));
+  }
+
   for (const d of dirs) {
     try {
       if (!fs.existsSync(d)) continue;
