@@ -331,6 +331,14 @@ Se um processo não tiver escritório cadastrado no Espaider, o sistema busca a 
 - Caminho definido em `config.json` (`fallback_spreadsheet`).
 - `Desktop/TRABALHO/*.xlsx` ou na pasta do projeto.
 
+### 4. Configuração de Timeout do Espaider (Spider)
+O Spider pode ser lento dependendo da carga do servidor ou VPN. O timeout padrão de consulta foi aumentado para **45 segundos** (anteriormente 20s). Se necessário, você pode configurar um valor personalizado em milissegundos no `config.json`:
+```json
+{
+  "espaider_timeout": 60000
+}
+```
+
 ---
 
 **Status:** ✅ Pronto para usar  

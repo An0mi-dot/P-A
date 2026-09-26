@@ -333,8 +333,9 @@ async function processFiles(ctx, opts) {
   }
 
   // Espaider
-  clog('dim', 'Inicializando consulta ao Espaider...');
-  const espaider = new EspaiderAutomator(headless);
+  const espaiderTimeout = Number(cfg.espaider_timeout) || 45000;
+  clog('dim', `Inicializando consulta ao Espaider (timeout: ${Math.round(espaiderTimeout / 1000)}s)...`);
+  const espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
   let espaiderOk = false;
   try {
     await espaider.start();
@@ -350,6 +351,7 @@ async function processFiles(ctx, opts) {
 
   const forceEspaiderRestart = async () => {
     try {
+      clog('warning', '  - Reiniciando sessão do navegador Edge...');
       await espaider.stop();
       await espaider.start();
       if (user && pwd) await espaider.login(user, pwd);
@@ -413,17 +415,38 @@ async function processFiles(ctx, opts) {
         let escritorio = '';
         if (espaiderOk && hasValidNpu) {
           if (totalEspaiderCalls > 0 && totalEspaiderCalls % 35 === 0) {
-            clog('dim', `  - Reiniciando Espaider (lote de ${totalEspaiderCalls} consultas)`);
+            clog('dim', `  - Reiniciando Espaider por precaução (lote de ${totalEspaiderCalls} consultas)`);
             await forceEspaiderRestart();
           }
           totalEspaiderCalls += 1;
-          escritorio = await espaider.searchNpu(npu);
+          try {
+            escritorio = await espaider.searchNpu(npu);
+          } catch (e) {
+            const msg = String(e).toLowerCase();
+            if (msg.includes('no such window') || msg.includes('target window already closed') || msg.includes('has been closed')) {
+              await forceEspaiderRestart();
+              try { escritorio = await espaider.searchNpu(npu); } catch (e2) {}
+            } else {
+              clog('error', `  - Erro na consulta do Espaider: ${e.message || e}`);
+            }
+          }
+
+          const st = espaider.lastSearch || {};
           if (escritorio) {
             clog('success', `  - Escritório encontrado no Espaider: ${escritorio}`);
             consecutiveErrors = 0;
-          } else {
+          } else if (st.ok && st.found === false) {
+            clog('dim', '  - Processo não cadastrado no Espaider');
+            consecutiveErrors = 0;
+          } else if (!st.ok || st.timedOut) {
+            clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
             consecutiveErrors += 1;
-            if (consecutiveErrors >= 5) { await forceEspaiderRestart(); consecutiveErrors = 0; }
+            await espaider.recoverSession();
+            if (consecutiveErrors >= 2) {
+              clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
+              await forceEspaiderRestart();
+              consecutiveErrors = 0;
+            }
           }
         }
 
@@ -500,18 +523,32 @@ async function consultarNpus(ctx, opts) {
   const total = npus.length;
   clog('highlight', `Consultando ${total} NPU(s) no Espaider...`);
 
-  const espaider = new EspaiderAutomator(headless);
+  const cfg = config.loadConfig() || {};
+  const espaiderTimeout = Number(cfg.espaider_timeout) || 45000;
+  const espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
   let espaiderOk = false;
   if (user && pwd) {
     try {
       await espaider.start();
-      clog('dim', 'Realizando login no Espaider...');
+      clog('dim', `Realizando login no Espaider (timeout: ${Math.round(espaiderTimeout / 1000)}s)...`);
       await espaider.login(user, pwd);
       espaiderOk = true;
     } catch (e) {
       clog('error', `Falha ao iniciar Espaider: ${e}`);
     }
   }
+
+  const forceEspaiderRestart = async () => {
+    try {
+      clog('warning', '  - Reiniciando sessão do navegador Edge...');
+      await espaider.stop();
+      await espaider.start();
+      if (user && pwd) await espaider.login(user, pwd);
+      espaider._filterLocator = null;
+    } catch (e) {
+      clog('error', `Falha ao reiniciar o Espaider: ${e}`);
+    }
+  };
 
   let consecutiveErrors = 0;
   const fb = new FallbackConsultant();
@@ -530,34 +567,29 @@ async function consultarNpus(ctx, opts) {
         escritorio = await espaider.searchNpu(npu);
       } catch (e) {
         const msg = String(e).toLowerCase();
-        if (msg.includes('no such window') || msg.includes('target window already closed')) {
-          clog('warning', '  - Janela do Edge fechada. Reiniciando...');
-          try { await espaider.stop(); } catch (e2) {}
-          try {
-            await espaider.start();
-            if (user && pwd) await espaider.login(user, pwd);
-            escritorio = await espaider.searchNpu(npu);
-          } catch (e3) {
-            clog('error', '  - Falha ao reiniciar Edge.');
-            escritorio = '';
-          }
+        if (msg.includes('no such window') || msg.includes('target window already closed') || msg.includes('has been closed')) {
+          await forceEspaiderRestart();
+          try { escritorio = await espaider.searchNpu(npu); } catch (e2) {}
         } else {
-          clog('error', `  - Erro na consulta: ${e}`);
+          clog('error', `  - Erro na consulta do Espaider: ${e.message || e}`);
           escritorio = '';
         }
       }
+
+      const st = espaider.lastSearch || {};
       if (escritorio) {
         clog('success', `  - Escritório: ${escritorio}`);
         consecutiveErrors = 0;
-      } else {
+      } else if (st.ok && st.found === false) {
+        clog('dim', '  - Processo não cadastrado no Espaider');
+        consecutiveErrors = 0;
+      } else if (!st.ok || st.timedOut) {
+        clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
         consecutiveErrors += 1;
-        if (consecutiveErrors >= 5) {
-          clog('warning', '  - Reiniciando Espaider (limite de erros)...');
-          try {
-            await espaider.stop();
-            await espaider.start();
-            if (user && pwd) await espaider.login(user, pwd);
-          } catch (e) {}
+        await espaider.recoverSession();
+        if (consecutiveErrors >= 2) {
+          clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
+          await forceEspaiderRestart();
           consecutiveErrors = 0;
         }
       }
@@ -575,7 +607,7 @@ async function consultarNpus(ctx, opts) {
       }
     }
 
-    if (!escritorio) clog('warning', '  - Escritório não encontrado no Espaider');
+    if (!escritorio) clog('warning', '  - Escritório não localizado (nem no Espaider nem na planilha)');
 
     results.push({ parte: '', npu, comarca, data: '', hora: '', ar: '', escritorio: escritorio || '' });
     progress(((idx + 1) / total) * 100);
