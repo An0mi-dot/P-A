@@ -44,7 +44,7 @@ class EspaiderAutomator {
         Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
       });
       this.page = await this.context.newPage();
-      this.page.setDefaultTimeout(this.timeoutMs);
+      this.page.setDefaultTimeout(10000);
       await this.page.goto(ESPAIDER_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
     } catch (e) {
       console.error(`Error starting Edge browser: ${e}`);
@@ -233,7 +233,7 @@ class EspaiderAutomator {
         const n = await rows.count().catch(() => 0);
         for (let i = 0; i < n; i++) {
           const row = rows.nth(i);
-          const txt = await row.textContent().catch(() => '');
+          const txt = await row.textContent({ timeout: 1500 }).catch(() => '');
           if (!txt) continue;
           if (npuRaw && txt.includes(npuRaw)) return row;
           if (npuDigits && npuDigits.length >= 10) {
@@ -264,7 +264,7 @@ class EspaiderAutomator {
             const el = loc.nth(i);
             const vis = await el.isVisible().catch(() => false);
             if (vis) {
-              const txt = ((await el.textContent().catch(() => '')) || '').toLowerCase();
+              const txt = ((await el.textContent({ timeout: 1000 }).catch(() => '')) || '').toLowerCase();
               if (
                 txt.includes('nenhum registro') ||
                 txt.includes('não há registros') ||
@@ -424,7 +424,29 @@ class EspaiderAutomator {
 
   async stop() {
     try {
-      if (this.browser) await this.browser.close();
+      if (this.context) {
+        try {
+          await Promise.race([
+            this.context.close().catch(() => {}),
+            new Promise((r) => setTimeout(r, 2000)),
+          ]);
+        } catch (e) {}
+      }
+      if (this.browser) {
+        const proc = typeof this.browser.process === 'function' ? this.browser.process() : null;
+        try {
+          await Promise.race([
+            this.browser.close().catch(() => {}),
+            new Promise((r) => setTimeout(r, 3000)),
+          ]);
+        } catch (e) {}
+        // Se ainda não fechou após 3 segundos, encerra forçadamente o processo do Edge
+        if (proc && !proc.killed) {
+          try {
+            proc.kill('SIGKILL');
+          } catch (e) {}
+        }
+      }
     } catch (e) {}
     this.browser = null;
     this.page = null;

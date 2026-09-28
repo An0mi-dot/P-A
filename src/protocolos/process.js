@@ -36,9 +36,12 @@ function applyMissingValueLabels(data, arquivoNome) {
   if (!(data.comarca || '').trim()) { data.comarca = missing('Comarca'); issues.push('Comarca não identificada'); }
   if (!(data.data || '').trim()) { data.data = tipo === 'agencia' ? 'N/A' : missing('Data'); issues.push('Data não identificada'); }
   if (!(data.hora || '').trim()) { data.hora = tipo === 'agencia' ? 'N/A' : missing('Hora'); issues.push('Hora não identificada'); }
-  if (!(data.ar || '').trim()) { data.ar = ''; issues.push('AR vazio'); }
+  if (!(data.ar || '').trim() || /^(sem\s*ar|ar\s*vazio|n[aã]o\s*identificado)$/i.test((data.ar || '').trim())) {
+    data.ar = tipo === 'agencia' ? '' : missing('AR');
+    issues.push('AR não identificado');
+  }
 
-  for (const key of ['parte', 'npu', 'comarca', 'data', 'hora']) {
+  for (const key of ['parte', 'npu', 'comarca', 'data', 'hora', 'ar']) {
     if (typeof data[key] === 'string') data[key] = data[key].trim();
   }
   return issues;
@@ -442,7 +445,7 @@ async function processFiles(ctx, opts) {
             clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
             consecutiveErrors += 1;
             await espaider.recoverSession();
-            if (consecutiveErrors >= 2) {
+            if (consecutiveErrors >= 3) {
               clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
               await forceEspaiderRestart();
               consecutiveErrors = 0;
@@ -587,7 +590,7 @@ async function consultarNpus(ctx, opts) {
         clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
         consecutiveErrors += 1;
         await espaider.recoverSession();
-        if (consecutiveErrors >= 2) {
+        if (consecutiveErrors >= 3) {
           clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
           await forceEspaiderRestart();
           consecutiveErrors = 0;
