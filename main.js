@@ -1391,9 +1391,10 @@ function runProtoWorker(win, kind, opts) {
             return;
         }
         protoWorkers.add(w);
-        const timeout = setTimeout(() => { finish({ ok: false, error: 'Timeout no processamento (15 min)' }); }, 900000);
+        // const timeout = setTimeout(() => { finish({ ok: false, error: 'Timeout no processamento (15 min)' }); }, 900000);
+        const timeout = null;
         function finish(res) {
-            clearTimeout(timeout);
+            // clearTimeout(timeout);
             protoWorkers.delete(w);
             try { w.terminate(); } catch (e) {}
             resolve(res);
