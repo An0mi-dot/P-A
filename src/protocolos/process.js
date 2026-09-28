@@ -58,27 +58,72 @@ function duplicateKey(data) {
 // (===PAGE=== / expectedByPages / pares de 2 páginas) — removidas do port fiel.
 async function getOcrText(filePath, { onLog = () => {}, modoAgencia = false } = {}) {
   let text = '';
-  try { text = await pdf.extractTextPdf(filePath); } catch (e) {}
+  let pageTexts = [];
+  try {
+    const { getDocument } = await pdf.getPdfjs();
+    const data = new Uint8Array(fs.readFileSync(filePath));
+    const pdfDoc = await getDocument({ data }).promise;
+    for (let p = 1; p <= pdfDoc.numPages; p++) {
+      const page = await pdfDoc.getPage(p);
+      const content = await page.getTextContent();
+      let out = '';
+      for (const item of content.items) { if (item.str) out += item.str + ' '; }
+      pageTexts.push(out.trim());
+      page.cleanup();
+    }
+    await pdfDoc.destroy();
+    text = pageTexts.join('\n');
+  } catch (e) {}
+
   const scanned = !(text && text.trim().length >= 50);
   let images = null;
   if (scanned) {
-    images = await pdf.renderPages(filePath, 400);
-    let ocrText = '';
-    try { ocrText = await ocr.ocrMultiEngine(images, (i, n) => onLog('dim', `  → Lendo via OCR... (página ${i + 1}/${n})`)); } catch (e) { onLog('error', `Erro na leitura do documento: ${e}`); }
+    pageTexts = [];
+    const runOcr = async (dpi, message) => {
+      images = await pdf.renderPages(filePath, dpi);
+      let ocrText = '';
+      let ocrPages = [];
+      let reportedPages = 0;
+      let lastStage = '';
+      onLog('dim', message);
+      try {
+        const ocrResult = await ocr.ocrMultiEngine(images, (completed, n, stage) => {
+          if (stage && stage !== lastStage) {
+            lastStage = stage;
+            reportedPages = 0;
+          }
+          if (completed <= n && completed > reportedPages) {
+            reportedPages = completed;
+            const stageDesc = stage === 'aggressive' ? ' [modo profundo]' : (stage === 'full' ? ' [modo completo]' : '');
+            onLog('dim', `  → Lendo via OCR... (página ${completed}/${n})${stageDesc}`);
+          }
+        });
+        ocrText = String(ocrResult || '');
+        ocrPages = (ocrResult && ocrResult.pages) || [];
+      } catch (e) { onLog('error', `Erro na leitura do documento: ${e}`); }
+      return { ocrText, ocrPages };
+    };
+
+    let { ocrText, ocrPages } = await runOcr(400, '  → Lendo via OCR (400 DPI)...');
+    if (!ex.findAllNpuPositions(ocrText).length) {
+      onLog('warning', '  → Nenhum NPU encontrado; repetindo OCR em 500 DPI...');
+      const secondTry = await runOcr(500, '  → Lendo via OCR (500 DPI)...');
+      if (ex.findAllNpuPositions(secondTry.ocrText).length) {
+        ocrText = secondTry.ocrText;
+        ocrPages = secondTry.ocrPages;
+      }
+    }
     text = (text ? text + '\n' : '') + ocrText;
+    pageTexts = ocrPages;
   }
-  return { text, images };
+  return { text, images, pageTexts };
 }
 
-// Port de process_pdf_multi (sem EasyOCR)
-async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {} } = {}) {  const { text, images: cachedImages } = await getOcrText(filePath, { onLog, modoAgencia });
+// Processamento de PDF multi-protocolo com suporte a documentos frente/verso (2 páginas por protocolo)
+async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {} } = {}) {
+  const { text, images: cachedImages, pageTexts: rawPageTexts } = await getOcrText(filePath, { onLog, modoAgencia });
   let images = cachedImages;
-  let npuCount = 0;
-
-  const npuPositions = text ? ex.findAllNpuPositions(text) : [];
-  npuCount = npuPositions.length;
-  let secTexts = text ? ex.splitTextByProtocol(text) : [];
-
+  const pageTexts = rawPageTexts || [];
   const results = [];
 
   // Modo agência: usa a extração local do Tesseract.
@@ -98,6 +143,67 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
     return results;
   }
 
+  // Identifica se o documento segue o padrão típico de 2 páginas por protocolo (frente e verso)
+  let isPaired = false;
+  if (!modoAgencia && pageTexts.length >= 2 && images && images.length >= 2) {
+    let frontHasNpu = 0;
+    const pairCount = Math.floor(pageTexts.length / 2);
+    for (let p = 0; p < pairCount; p++) {
+      const front = pageTexts[p * 2] || '';
+      if (ex.findNpu(front)) frontHasNpu++;
+    }
+    if (frontHasNpu > 0 && frontHasNpu >= Math.ceil(pairCount * 0.5)) {
+      isPaired = true;
+    }
+  }
+
+  if (isPaired) {
+    const pairCount = Math.floor(pageTexts.length / 2);
+    onLog('info', `Estrutura de frente e verso identificada: ${pairCount} protocolo(s) em ${pageTexts.length} páginas`);
+
+    for (let k = 0; k < pairCount; k++) {
+      const frontIdx = k * 2;
+      const backIdx = k * 2 + 1;
+      const frontText = pageTexts[frontIdx] || '';
+      const backText = pageTexts[backIdx] || '';
+      const secText = frontText + '\n' + backText;
+
+      let npu = ex.findNpu(frontText) || ex.findNpu(secText) || '';
+      if (npu) npu = ex.normalizeNpu(npu);
+      let parte = ex.findPartes(frontText) || ex.findPartes(secText) || '';
+      let comarca = ex.findComarca(frontText) || ex.findComarca(secText) || '';
+      const [d, h] = ex.findAudienciaDatetime(frontText) || ex.findAudienciaDatetime(secText);
+      let data = d || '';
+      let hora = h || '';
+
+      // AR é prioritariamente do verso (backText)
+      let ar = ex.findArInText(backText) || ex.findArInText(frontText) || '';
+
+      // Se o AR não foi identificado no texto, busca via OCR focalizado na imagem do verso
+      if (!ar || ar.length !== 13) {
+        const protocolImages = [images[backIdx], images[frontIdx]].filter(Boolean);
+        onLog('dim', `  → Buscando AR via OCR no verso do protocolo #${k + 1}...`);
+        const arLocal = await ocr.findArInImages(protocolImages);
+        if (arLocal) ar = arLocal;
+      }
+
+      data = data || '';
+      hora = hora || '';
+      npu = ex.tryFixNpuYear(npu, data);
+      comarca = ex.fixComarcaByNpu(npu, comarca);
+
+      results.push({ parte, npu, comarca, data, hora, ar: ar || '', tipo: 'postal' });
+    }
+
+    onLog('info', `Extraídos ${results.length} protocolos: ${results.map(r => `${String(r.npu).slice(0, 15)} / ${String(r.comarca).slice(0, 20)}`).join(', ')}`);
+    return results;
+  }
+
+  // Fallback padrão: delimitação de protocolos via splitTextByProtocol
+  const npuPositions = text ? ex.findAllNpuPositions(text) : [];
+  const npuCount = npuPositions.length;
+  let secTexts = text ? ex.splitTextByProtocol(text) : [];
+
   if (npuCount > 0) {
     onLog('info', `OCR concluído: usando OCR direto para ${npuCount} protocolo(s)`);
   }
@@ -105,46 +211,49 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
   for (let idx = 0; idx < secTexts.length; idx++) {
     const secText = secTexts[idx] || '';
     let parte = ex.findPartes(secText) || '';
-    let npu = '', comarca = '', data = '', hora = '', ar = '';
+    let npu = ex.findNpu(secText) || '';
+    if (npu) npu = ex.normalizeNpu(npu);
 
-    npu = ex.findNpu(secText) || '';
-      if (npu) npu = ex.normalizeNpu(npu);
-      parte = ex.findPartes(secText) || '';
-      const prevTail = idx > 0 ? secTexts[idx - 1].slice(-800) : '';
-      const comarcaText = prevTail + secText;
-      comarca = ex.findComarca(comarcaText) || '';
-      const [d, h] = ex.findAudienciaDatetime(secText);
-      data = d || '';
-      hora = h || '';
-      ar = ex.findArInText(secText) || '';
+    // Busca comarca primariamente no próprio trecho do protocolo
+    let comarca = ex.findComarca(secText) || '';
+    if (!comarca && idx > 0) {
+      const prevTail = secTexts[idx - 1].slice(-400);
+      comarca = ex.findComarca(prevTail) || '';
+    }
 
-      const missingCore = !npu || !parte || !comarca;
-      const missingExtra = modoAgencia ? false : (!data || !hora);
-      if (missingCore || missingExtra) {
-        if (!images) images = await pdf.renderPages(filePath, 400);
-        const img = require('./image');
-        const processed = images.map((im) => img.preprocessFull(im));
-        let textProc = '';
-        try { textProc = await ocr.ocrTesseract(processed, 'none'); } catch (e) {}
-        if (!data || !hora) {
-          const [d2, h2] = ex.findAudienciaDatetime(textProc);
-          if (d2) data = d2;
-          if (h2) hora = h2;
-        }
-        if (!npu) { npu = ex.findNpu(textProc) || ''; if (npu) npu = ex.normalizeNpu(npu); }
-        if (!comarca) {
-          const comarcaText2 = prevTail ? prevTail + textProc : textProc;
-          comarca = ex.findComarca(comarcaText2) || '';
-        }
-        if (!modoAgencia && !ar) ar = ex.findArInText(textProc) || '';
+    const [d, h] = ex.findAudienciaDatetime(secText);
+    let data = d || '';
+    let hora = h || '';
+    let ar = ex.findArInText(secText) || '';
+
+    const missingCore = !npu || !parte || !comarca;
+    const missingExtra = modoAgencia ? false : (!data || !hora);
+    if ((missingCore || missingExtra) && images && images.length) {
+      const img = require('./image');
+      const processed = images.map((im) => img.preprocessFull(im));
+      let textProc = '';
+      try {
+        const procRes = await ocr.ocrTesseract(processed, 'none');
+        textProc = String(procRes || '');
+      } catch (e) {}
+      if (!data || !hora) {
+        const [d2, h2] = ex.findAudienciaDatetime(textProc);
+        if (d2) data = d2;
+        if (h2) hora = h2;
       }
+      if (!npu) { npu = ex.findNpu(textProc) || ''; if (npu) npu = ex.normalizeNpu(npu); }
+      if (!comarca) { comarca = ex.findComarca(textProc) || ''; }
+      if (!modoAgencia && !ar) ar = ex.findArInText(textProc) || '';
+    }
 
-    // AR final via OCR local (pula em modo agência)
+    // AR final via OCR local focalizado
     if (!modoAgencia && (!ar || ar.length !== 13)) {
-      if (!images) images = await pdf.renderPages(filePath, 400);
-      onLog('dim', '  → Buscando AR via OCR local...');
-      const arLocal = await ocr.findArInImages(images);
-      if (arLocal) ar = arLocal;
+      if (!images && filePath) images = await pdf.renderPages(filePath, 400);
+      if (images && images.length) {
+        onLog('dim', `  → Buscando AR via OCR local (protocolo #${idx + 1})...`);
+        const arLocal = await ocr.findArInImages(images);
+        if (arLocal) ar = arLocal;
+      }
     }
 
     data = data || '';
@@ -155,7 +264,7 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
     results.push({ parte, npu, comarca, data, hora, ar: ar || '', tipo: modoAgencia ? 'agencia' : 'postal' });
   }
 
-  onLog('info', `Extraidos ${results.length} protocolos: ${results.map(r => `${String(r.npu).slice(0, 15)} / ${String(r.comarca).slice(0, 20)}`).join(', ')}`);
+  onLog('info', `Extraídos ${results.length} protocolos: ${results.map(r => `${String(r.npu).slice(0, 15)} / ${String(r.comarca).slice(0, 20)}`).join(', ')}`);
   return results;
 }
 
@@ -215,9 +324,18 @@ async function processFiles(ctx, opts) {
     config.saveConfig(cfg);
   }
 
+  // Tesseract OCR status
+  const tessInfo = ocr.getTesseractInfo();
+  if (tessInfo.available) {
+    clog('dim', `Tesseract OCR nativo pronto: ${tessInfo.path}`);
+  } else {
+    clog('warning', 'tesseract.exe não localizado nas pastas padrão. Tentando fallback...');
+  }
+
   // Espaider
-  clog('dim', 'Inicializando consulta ao Espaider...');
-  const espaider = new EspaiderAutomator(headless);
+  const espaiderTimeout = Number(cfg.espaider_timeout) || 45000;
+  clog('dim', `Inicializando consulta ao Espaider (timeout: ${Math.round(espaiderTimeout / 1000)}s)...`);
+  const espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
   let espaiderOk = false;
   try {
     await espaider.start();
@@ -233,6 +351,7 @@ async function processFiles(ctx, opts) {
 
   const forceEspaiderRestart = async () => {
     try {
+      clog('warning', '  - Reiniciando sessão do navegador Edge...');
       await espaider.stop();
       await espaider.start();
       if (user && pwd) await espaider.login(user, pwd);
@@ -245,6 +364,11 @@ async function processFiles(ctx, opts) {
   const fb = new FallbackConsultant();
   await fb.ready;
   fb._normalize();
+  if (fb.error) {
+    clog('warning', `Fallback de comarca indisponível: ${fb.error}`);
+  } else {
+    clog('dim', 'Fallback de escritório por comarca carregado.');
+  }
 
   let consecutiveErrors = 0;
   let totalEspaiderCalls = 0;
@@ -267,9 +391,10 @@ async function processFiles(ctx, opts) {
         const issues = applyMissingValueLabels(data, arquivoNome);
         const npu = (data.npu || '').trim();
         const comarca = (data.comarca || '').trim();
+        const hasValidNpu = npu && !/não identificado|nao identificado/i.test(npu);
         const dupKey = duplicateKey(data);
 
-        if (npu && !npu.toLowerCase().includes('não identificado') && !npu.toLowerCase().includes('nao identificado')) {
+        if (hasValidNpu) {
           if (seenNpus.has(npu)) {
             clog('warning', `  - NPU duplicado ignorado: ${npu}`);
             addError(arquivoNome, 'NPU duplicado', 'Ignorado');
@@ -285,22 +410,43 @@ async function processFiles(ctx, opts) {
         if (dupKey) seenProcesses.add(dupKey);
 
         if (issues.length) addError(arquivoNome, issues.join('; '), 'Ajustado');
-        if (npu && !npu.toLowerCase().includes('não identificado') && !npu.toLowerCase().includes('nao identificado')) validNpus.push(npu);
+        if (hasValidNpu) validNpus.push(npu);
 
         let escritorio = '';
-        if (espaiderOk && npu) {
+        if (espaiderOk && hasValidNpu) {
           if (totalEspaiderCalls > 0 && totalEspaiderCalls % 35 === 0) {
-            clog('dim', `  - Reiniciando Espaider (lote de ${totalEspaiderCalls} consultas)`);
+            clog('dim', `  - Reiniciando Espaider por precaução (lote de ${totalEspaiderCalls} consultas)`);
             await forceEspaiderRestart();
           }
           totalEspaiderCalls += 1;
-          escritorio = await espaider.searchNpu(npu);
+          try {
+            escritorio = await espaider.searchNpu(npu);
+          } catch (e) {
+            const msg = String(e).toLowerCase();
+            if (msg.includes('no such window') || msg.includes('target window already closed') || msg.includes('has been closed')) {
+              await forceEspaiderRestart();
+              try { escritorio = await espaider.searchNpu(npu); } catch (e2) {}
+            } else {
+              clog('error', `  - Erro na consulta do Espaider: ${e.message || e}`);
+            }
+          }
+
+          const st = espaider.lastSearch || {};
           if (escritorio) {
             clog('success', `  - Escritório encontrado no Espaider: ${escritorio}`);
             consecutiveErrors = 0;
-          } else {
+          } else if (st.ok && st.found === false) {
+            clog('dim', '  - Processo não cadastrado no Espaider');
+            consecutiveErrors = 0;
+          } else if (!st.ok || st.timedOut) {
+            clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
             consecutiveErrors += 1;
-            if (consecutiveErrors >= 5) { await forceEspaiderRestart(); consecutiveErrors = 0; }
+            await espaider.recoverSession();
+            if (consecutiveErrors >= 2) {
+              clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
+              await forceEspaiderRestart();
+              consecutiveErrors = 0;
+            }
           }
         }
 
@@ -316,7 +462,15 @@ async function processFiles(ctx, opts) {
         data.arquivo = arquivoNome;
         data.source_file = arquivoNome;
         results.push(data);
-        clog('success', `  - OK: Parte=${data.parte || ''} | NPU=${data.npu || '(sem NPU)'} | Comarca=${data.comarca || ''} | Data/Hora=${data.data || ''} ${data.hora || ''} | AR=${data.ar || '(sem AR)'} | Escritório=${data.escritorio || '(vazio)'}`);
+        if (hasValidNpu) {
+          clog('success', `  - OK: Parte=${data.parte || ''} | NPU=${data.npu || ''} | Comarca=${data.comarca || ''} | Data/Hora=${data.data || ''} ${data.hora || ''} | AR=${data.ar || '(sem AR)'} | Escritório=${data.escritorio || '(vazio)'}`);
+        } else {
+          clog('warning', `  - ⚠ Não identificado: Parte=${data.parte || ''} | NPU=${data.npu || '(sem NPU)'} | Comarca=${data.comarca || ''} | AR=${data.ar || '(sem AR)'}`);
+        }
+      }
+
+      if (!datas.length) {
+        clog('error', `  - Nenhum protocolo pôde ser extraído de ${arquivoNome}`);
       }
 
       // Cópia do PDF com nome dos NPUs
@@ -369,18 +523,32 @@ async function consultarNpus(ctx, opts) {
   const total = npus.length;
   clog('highlight', `Consultando ${total} NPU(s) no Espaider...`);
 
-  const espaider = new EspaiderAutomator(headless);
+  const cfg = config.loadConfig() || {};
+  const espaiderTimeout = Number(cfg.espaider_timeout) || 45000;
+  const espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
   let espaiderOk = false;
   if (user && pwd) {
     try {
       await espaider.start();
-      clog('dim', 'Realizando login no Espaider...');
+      clog('dim', `Realizando login no Espaider (timeout: ${Math.round(espaiderTimeout / 1000)}s)...`);
       await espaider.login(user, pwd);
       espaiderOk = true;
     } catch (e) {
       clog('error', `Falha ao iniciar Espaider: ${e}`);
     }
   }
+
+  const forceEspaiderRestart = async () => {
+    try {
+      clog('warning', '  - Reiniciando sessão do navegador Edge...');
+      await espaider.stop();
+      await espaider.start();
+      if (user && pwd) await espaider.login(user, pwd);
+      espaider._filterLocator = null;
+    } catch (e) {
+      clog('error', `Falha ao reiniciar o Espaider: ${e}`);
+    }
+  };
 
   let consecutiveErrors = 0;
   const fb = new FallbackConsultant();
@@ -399,34 +567,29 @@ async function consultarNpus(ctx, opts) {
         escritorio = await espaider.searchNpu(npu);
       } catch (e) {
         const msg = String(e).toLowerCase();
-        if (msg.includes('no such window') || msg.includes('target window already closed')) {
-          clog('warning', '  - Janela do Edge fechada. Reiniciando...');
-          try { await espaider.stop(); } catch (e2) {}
-          try {
-            await espaider.start();
-            if (user && pwd) await espaider.login(user, pwd);
-            escritorio = await espaider.searchNpu(npu);
-          } catch (e3) {
-            clog('error', '  - Falha ao reiniciar Edge.');
-            escritorio = '';
-          }
+        if (msg.includes('no such window') || msg.includes('target window already closed') || msg.includes('has been closed')) {
+          await forceEspaiderRestart();
+          try { escritorio = await espaider.searchNpu(npu); } catch (e2) {}
         } else {
-          clog('error', `  - Erro na consulta: ${e}`);
+          clog('error', `  - Erro na consulta do Espaider: ${e.message || e}`);
           escritorio = '';
         }
       }
+
+      const st = espaider.lastSearch || {};
       if (escritorio) {
         clog('success', `  - Escritório: ${escritorio}`);
         consecutiveErrors = 0;
-      } else {
+      } else if (st.ok && st.found === false) {
+        clog('dim', '  - Processo não cadastrado no Espaider');
+        consecutiveErrors = 0;
+      } else if (!st.ok || st.timedOut) {
+        clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
         consecutiveErrors += 1;
-        if (consecutiveErrors >= 5) {
-          clog('warning', '  - Reiniciando Espaider (limite de erros)...');
-          try {
-            await espaider.stop();
-            await espaider.start();
-            if (user && pwd) await espaider.login(user, pwd);
-          } catch (e) {}
+        await espaider.recoverSession();
+        if (consecutiveErrors >= 2) {
+          clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
+          await forceEspaiderRestart();
           consecutiveErrors = 0;
         }
       }
@@ -444,7 +607,7 @@ async function consultarNpus(ctx, opts) {
       }
     }
 
-    if (!escritorio) clog('warning', '  - Escritório não encontrado no Espaider');
+    if (!escritorio) clog('warning', '  - Escritório não localizado (nem no Espaider nem na planilha)');
 
     results.push({ parte: '', npu, comarca, data: '', hora: '', ar: '', escritorio: escritorio || '' });
     progress(((idx + 1) / total) * 100);

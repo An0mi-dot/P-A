@@ -161,6 +161,17 @@
             </div>
 
             <div class="card">
+                <div class="section-label"><i class="fa-solid fa-microchip"></i> Motor OCR (Tesseract)</div>
+                <div class="row" style="gap:10px;">
+                    <span class="lbl">Executável:</span>
+                    <input id="in-tesseract" class="input fill" placeholder="Detectando Tesseract..." readonly style="font-size:0.8rem; background:var(--surface-hover);">
+                    <button id="btn-tesseract" class="btn" style="font-size:0.82rem; background:var(--surface-hover); border:1px solid var(--border);" title="Selecionar tesseract.exe manualmente"><i class="fa-solid fa-magnifying-glass"></i> Alterar...</button>
+                    <button id="btn-tesseract-reset" class="btn" style="font-size:0.82rem; background:var(--surface-hover); border:1px solid var(--border);" title="Redefinir para detecção automática"><i class="fa-solid fa-rotate-left"></i> Auto</button>
+                    <span id="tesseract-badge" style="font-size:0.75rem; padding:3px 8px; border-radius:12px; font-weight:600;"></span>
+                </div>
+            </div>
+
+            <div class="card">
                 <div class="section-label"><i class="fa-solid fa-play"></i> Ações</div>
                 <div class="row toolbar">
                     <button id="btn-process" class="btn btn-success" style="font-size:0.85rem;"><i class="fa-solid fa-play"></i> Iniciar Processamento</button>
@@ -360,6 +371,32 @@
             $('btn-npus-clear').addEventListener('click', () => $('in-npus').value = '');
             $('btn-comarcas-clear').addEventListener('click', () => $('in-comarcas').value = '');
 
+            function updateTesseractUI(customPath, detectedPath) {
+                const inEl = $('in-tesseract');
+                const badge = $('tesseract-badge');
+                if (!inEl || !badge) return;
+
+                if (customPath) {
+                    inEl.value = customPath;
+                    badge.textContent = 'Personalizado';
+                    badge.style.background = 'rgba(59, 130, 246, 0.15)';
+                    badge.style.color = '#60a5fa';
+                    badge.style.border = '1px solid rgba(59, 130, 246, 0.4)';
+                } else if (detectedPath) {
+                    inEl.value = detectedPath;
+                    badge.textContent = 'Auto-detectado';
+                    badge.style.background = 'rgba(16, 185, 129, 0.15)';
+                    badge.style.color = '#34d399';
+                    badge.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+                } else {
+                    inEl.value = 'Tesseract não encontrado no sistema';
+                    badge.textContent = 'Não Encontrado';
+                    badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                    badge.style.color = '#f87171';
+                    badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                }
+            }
+
             // --- Load config ---
             async function loadConfig() {
                 try {
@@ -370,8 +407,26 @@
                         state.outputFolder = cfg.output_folder;
                         $('folder-label').textContent = 'Pasta: ' + cfg.output_folder;
                     }
+                    updateTesseractUI(cfg.tesseract_cmd, cfg.tesseract_detected);
                 } catch (e) { console.warn('config load error', e); }
             }
+
+            $('btn-tesseract').addEventListener('click', async () => {
+                if (state.running) return;
+                const picked = await window.api.invoke('proto:pick-tesseract', $('in-tesseract').value || undefined);
+                if (picked) {
+                    await window.api.invoke('proto:save-config', { tesseract_cmd: picked });
+                    await loadConfig();
+                    log('highlight', `Tesseract configurado: ${picked}`);
+                }
+            });
+
+            $('btn-tesseract-reset').addEventListener('click', async () => {
+                if (state.running) return;
+                await window.api.invoke('proto:save-config', { tesseract_cmd: '' });
+                await loadConfig();
+                log('info', 'Tesseract redefinido para busca automática no sistema');
+            });
 
             // --- Buttons ---
             $('btn-files').addEventListener('click', async () => {

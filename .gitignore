@@ -21,7 +21,7 @@ yarn-error.log*
 *.test.ts
 *.spec.ts
 test-results/
-tests/unit/
+# tests/unit/
 Analysis.ipynb
 
 # OS

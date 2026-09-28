@@ -21,7 +21,15 @@ async function getPdfjs() {
 
 // --- Image helper type: { canvas, width, height } ---
 let napi = null;
-function getCanvas() { if (!napi) napi = require('@napi-rs/canvas'); return napi; }
+function getCanvas() {
+  if (!napi) {
+    napi = require('@napi-rs/canvas');
+    if (!global.Path2D && napi.Path2D) global.Path2D = napi.Path2D;
+    if (!global.ImageData && napi.ImageData) global.ImageData = napi.ImageData;
+    if (!global.DOMMatrix && napi.DOMMatrix) global.DOMMatrix = napi.DOMMatrix;
+  }
+  return napi;
+}
 
 function createImage(w, h) {
   const canvas = getCanvas().createCanvas(Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
