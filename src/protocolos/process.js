@@ -146,13 +146,17 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
     return results;
   }
 
+  const pages = (pageTexts && pageTexts.pages && Array.isArray(pageTexts.pages))
+    ? pageTexts.pages
+    : (Array.isArray(pageTexts) ? pageTexts : [String(pageTexts || '')]);
+
   // Identifica se o documento segue o padrão típico de 2 páginas por protocolo (frente e verso)
   let isPaired = false;
-  if (!modoAgencia && pageTexts.length >= 2 && images && images.length >= 2) {
+  if (!modoAgencia && pages.length >= 2 && images && images.length >= 2) {
     let frontHasNpu = 0;
-    const pairCount = Math.floor(pageTexts.length / 2);
+    const pairCount = Math.floor(pages.length / 2);
     for (let p = 0; p < pairCount; p++) {
-      const front = pageTexts[p * 2] || '';
+      const front = pages[p * 2] || '';
       if (ex.findNpu(front)) frontHasNpu++;
     }
     if (frontHasNpu > 0 && frontHasNpu >= Math.ceil(pairCount * 0.5)) {
@@ -161,14 +165,14 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
   }
 
   if (isPaired) {
-    const pairCount = Math.floor(pageTexts.length / 2);
-    onLog('info', `Estrutura de frente e verso identificada: ${pairCount} protocolo(s) em ${pageTexts.length} páginas`);
+    const pairCount = Math.floor(pages.length / 2);
+    onLog('info', `Estrutura de frente e verso identificada: ${pairCount} protocolo(s) em ${pages.length} páginas`);
 
     for (let k = 0; k < pairCount; k++) {
       const frontIdx = k * 2;
       const backIdx = k * 2 + 1;
-      const frontText = pageTexts[frontIdx] || '';
-      const backText = pageTexts[backIdx] || '';
+      const frontText = pages[frontIdx] || '';
+      const backText = pages[backIdx] || '';
       const secText = frontText + '\n' + backText;
 
       let npu = ex.findNpu(frontText) || ex.findNpu(secText) || '';
