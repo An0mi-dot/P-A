@@ -42,3 +42,31 @@ test('EspaiderAutomator - recoverSession não lança erro quando página fechada
     await auto.recoverSession();
   });
 });
+
+test('EspaiderAutomator - stop() não trava mesmo se browser.close() pendurar', async () => {
+  const auto = new EspaiderAutomator(true);
+  let killed = false;
+  auto.browser = {
+    close: () => new Promise(() => {}), // nunca resolve
+    process: () => ({
+      killed: false,
+      kill: () => { killed = true; }
+    })
+  };
+  
+  const start = Date.now();
+  await auto.stop();
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 4000, `stop() deve encerrar em menos de 4s (levou ${elapsed}ms)`);
+  assert.strictEqual(killed, true, 'Deve matar o processo se o close pendurar');
+});
+
+test('Process - applyMissingValueLabels preenche AR não identificado com nome do arquivo', () => {
+  const { applyMissingValueLabels } = require('../../src/protocolos/process');
+  
+  const data = { npu: '0001234-56.2025.8.05.0001', parte: 'Teste', comarca: 'Salvador', ar: '' };
+  const issues = applyMissingValueLabels(data, 'arquivo_teste.pdf');
+  
+  assert.strictEqual(data.ar, 'AR não identificado - arquivo_teste.pdf');
+  assert.ok(issues.includes('AR não identificado'));
+});

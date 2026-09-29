@@ -344,13 +344,26 @@ async function findArInImages(images) {
   for (const image of imgList) {
     if (!image) continue;
     try {
-      const cropImage = pdf.cropImage(image, 0, Math.floor(image.height / 2), image.width, image.height);
-      const cropText = String(await ocrTesseractSingle(img.preprocessSoft(cropImage), 'none'));
-      const cropResult = ex.findArInText(cropText);
-      if (cropResult && cropResult.length === 13) return cropResult;
-      if (cropResult && !bestResult) bestResult = cropResult;
+      // 1. OCR direto na página inteira sem pré-processamento ('none') - preserva códigos de barra limpos
+      const directText = String(await ocrTesseractSingle(image, 'none'));
+      const directResult = ex.findArInText(directText);
+      if (directResult && directResult.length === 13) return directResult;
+      if (directResult && !bestResult) bestResult = directResult;
 
-      // Scan rotacionado em 90 graus
+      // 2. Metade inferior sem pré-processamento ('none')
+      const cropImage = pdf.cropImage(image, 0, Math.floor(image.height / 2), image.width, image.height);
+      const cropTextNone = String(await ocrTesseractSingle(cropImage, 'none'));
+      const cropResultNone = ex.findArInText(cropTextNone);
+      if (cropResultNone && cropResultNone.length === 13) return cropResultNone;
+      if (cropResultNone && !bestResult) bestResult = cropResultNone;
+
+      // 3. Metade inferior com pré-processamento soft (para documentos com baixa resolução/contraste)
+      const cropTextSoft = String(await ocrTesseractSingle(img.preprocessSoft(cropImage), 'none'));
+      const cropResultSoft = ex.findArInText(cropTextSoft);
+      if (cropResultSoft && cropResultSoft.length === 13) return cropResultSoft;
+      if (cropResultSoft && !bestResult) bestResult = cropResultSoft;
+
+      // 4. Scan rotacionado em 90 graus
       const rotatedText = String(await ocrTesseractSingle(pdf.rotate90(cropImage), 'soft'));
       const rotatedResult = ex.findArInText(rotatedText);
       if (rotatedResult && rotatedResult.length === 13) return rotatedResult;

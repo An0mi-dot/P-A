@@ -36,9 +36,12 @@ function applyMissingValueLabels(data, arquivoNome) {
   if (!(data.comarca || '').trim()) { data.comarca = missing('Comarca'); issues.push('Comarca não identificada'); }
   if (!(data.data || '').trim()) { data.data = tipo === 'agencia' ? 'N/A' : missing('Data'); issues.push('Data não identificada'); }
   if (!(data.hora || '').trim()) { data.hora = tipo === 'agencia' ? 'N/A' : missing('Hora'); issues.push('Hora não identificada'); }
-  if (!(data.ar || '').trim()) { data.ar = ''; issues.push('AR vazio'); }
+  if (!(data.ar || '').trim() || /^(sem\s*ar|ar\s*vazio|n[aã]o\s*identificado)$/i.test((data.ar || '').trim())) {
+    data.ar = tipo === 'agencia' ? '' : missing('AR');
+    issues.push('AR não identificado');
+  }
 
-  for (const key of ['parte', 'npu', 'comarca', 'data', 'hora']) {
+  for (const key of ['parte', 'npu', 'comarca', 'data', 'hora', 'ar']) {
     if (typeof data[key] === 'string') data[key] = data[key].trim();
   }
   return issues;
@@ -143,13 +146,17 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
     return results;
   }
 
+  const pages = (pageTexts && pageTexts.pages && Array.isArray(pageTexts.pages))
+    ? pageTexts.pages
+    : (Array.isArray(pageTexts) ? pageTexts : [String(pageTexts || '')]);
+
   // Identifica se o documento segue o padrão típico de 2 páginas por protocolo (frente e verso)
   let isPaired = false;
-  if (!modoAgencia && pageTexts.length >= 2 && images && images.length >= 2) {
+  if (!modoAgencia && pages.length >= 2 && images && images.length >= 2) {
     let frontHasNpu = 0;
-    const pairCount = Math.floor(pageTexts.length / 2);
+    const pairCount = Math.floor(pages.length / 2);
     for (let p = 0; p < pairCount; p++) {
-      const front = pageTexts[p * 2] || '';
+      const front = pages[p * 2] || '';
       if (ex.findNpu(front)) frontHasNpu++;
     }
     if (frontHasNpu > 0 && frontHasNpu >= Math.ceil(pairCount * 0.5)) {
@@ -158,14 +165,14 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
   }
 
   if (isPaired) {
-    const pairCount = Math.floor(pageTexts.length / 2);
-    onLog('info', `Estrutura de frente e verso identificada: ${pairCount} protocolo(s) em ${pageTexts.length} páginas`);
+    const pairCount = Math.floor(pages.length / 2);
+    onLog('info', `Estrutura de frente e verso identificada: ${pairCount} protocolo(s) em ${pages.length} páginas`);
 
     for (let k = 0; k < pairCount; k++) {
       const frontIdx = k * 2;
       const backIdx = k * 2 + 1;
-      const frontText = pageTexts[frontIdx] || '';
-      const backText = pageTexts[backIdx] || '';
+      const frontText = pages[frontIdx] || '';
+      const backText = pages[backIdx] || '';
       const secText = frontText + '\n' + backText;
 
       let npu = ex.findNpu(frontText) || ex.findNpu(secText) || '';
@@ -442,7 +449,7 @@ async function processFiles(ctx, opts) {
             clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
             consecutiveErrors += 1;
             await espaider.recoverSession();
-            if (consecutiveErrors >= 2) {
+            if (consecutiveErrors >= 3) {
               clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
               await forceEspaiderRestart();
               consecutiveErrors = 0;
@@ -587,7 +594,7 @@ async function consultarNpus(ctx, opts) {
         clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
         consecutiveErrors += 1;
         await espaider.recoverSession();
-        if (consecutiveErrors >= 2) {
+        if (consecutiveErrors >= 3) {
           clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
           await forceEspaiderRestart();
           consecutiveErrors = 0;
