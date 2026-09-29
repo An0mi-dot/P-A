@@ -107,10 +107,12 @@ async function getOcrText(filePath, { onLog = () => {}, modoAgencia = false } = 
       return { ocrText, ocrPages };
     };
 
-    let { ocrText, ocrPages } = await runOcr(400, '  → Lendo via OCR (400 DPI)...');
+    const cfg = config.loadConfig() || {};
+    const primaryDpi = Number(cfg.ocr_dpi) || 400;
+    let { ocrText, ocrPages } = await runOcr(primaryDpi, `  → Lendo via OCR (${primaryDpi} DPI)...`);
     if (!ex.findAllNpuPositions(ocrText).length) {
-      onLog('warning', '  → Nenhum NPU encontrado; repetindo OCR em 500 DPI...');
-      const secondTry = await runOcr(500, '  → Lendo via OCR (500 DPI)...');
+      onLog('warning', '  → Nenhum NPU encontrado; repetindo OCR em 600 DPI com análise aprofundada...');
+      const secondTry = await runOcr(600, '  → Lendo via OCR (600 DPI em modo aprofundado)...');
       if (ex.findAllNpuPositions(secondTry.ocrText).length) {
         ocrText = secondTry.ocrText;
         ocrPages = secondTry.ocrPages;
@@ -176,6 +178,13 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
       const secText = frontText + '\n' + backText;
 
       let npu = ex.findNpu(frontText) || ex.findNpu(secText) || '';
+      // Se não encontrou NPU na frente (ex.: página inclinada/escaneamento torto), tenta OCR direto na página com PSM 3
+      if (!npu && images && images[frontIdx]) {
+        try {
+          const tiltFront = String(await ocr.ocrTesseractSingle(images[frontIdx], 'none', { psm: '3' }) || '');
+          npu = ex.findNpu(tiltFront) || '';
+        } catch (e) {}
+      }
       if (npu) npu = ex.normalizeNpu(npu);
       let parte = ex.findPartes(frontText) || ex.findPartes(secText) || '';
       let comarca = ex.findComarca(frontText) || ex.findComarca(secText) || '';
@@ -190,7 +199,15 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
       if (!ar || ar.length !== 13) {
         const protocolImages = [images[backIdx], images[frontIdx]].filter(Boolean);
         onLog('dim', `  → Buscando AR via OCR no verso do protocolo #${k + 1}...`);
-        const arLocal = await ocr.findArInImages(protocolImages);
+        let arLocal = await ocr.findArInImages(protocolImages);
+        if (!arLocal && filePath) {
+          try {
+            const highRes = await pdf.renderPages(filePath, 600);
+            if (highRes && (highRes[backIdx] || highRes[frontIdx])) {
+              arLocal = await ocr.findArInImages([highRes[backIdx], highRes[frontIdx]].filter(Boolean));
+            }
+          } catch (e) {}
+        }
         if (arLocal) ar = arLocal;
       }
 
@@ -253,12 +270,19 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
       if (!modoAgencia && !ar) ar = ex.findArInText(textProc) || '';
     }
 
-    // AR final via OCR local focalizado
     if (!modoAgencia && (!ar || ar.length !== 13)) {
       if (!images && filePath) images = await pdf.renderPages(filePath, 400);
       if (images && images.length) {
         onLog('dim', `  → Buscando AR via OCR local (protocolo #${idx + 1})...`);
-        const arLocal = await ocr.findArInImages(images);
+        let arLocal = await ocr.findArInImages(images);
+        if (!arLocal && filePath) {
+          try {
+            const highRes = await pdf.renderPages(filePath, 600);
+            if (highRes && highRes.length) {
+              arLocal = await ocr.findArInImages(highRes);
+            }
+          } catch (e) {}
+        }
         if (arLocal) ar = arLocal;
       }
     }

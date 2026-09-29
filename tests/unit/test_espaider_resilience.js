@@ -70,3 +70,53 @@ test('Process - applyMissingValueLabels preenche AR não identificado com nome d
   assert.strictEqual(data.ar, 'AR não identificado - arquivo_teste.pdf');
   assert.ok(issues.includes('AR não identificado'));
 });
+
+test('EspaiderAutomator - _gridEmpty reconhece variações de grid vazio', async () => {
+  const auto = new EspaiderAutomator(true);
+  
+  // Mock de frame com mensagem 'Sem registros para exibir'
+  const mockFrame = {
+    locator: (sel) => ({
+      count: async () => sel.includes('div.x-paging-info') ? 1 : 0,
+      nth: () => ({
+        isVisible: async () => true,
+        textContent: async () => 'Sem registros para exibir'
+      })
+    })
+  };
+  auto._frames = () => [mockFrame];
+
+  const isEmpty = await auto._gridEmpty();
+  assert.strictEqual(isEmpty, true, 'Deve reconhecer "Sem registros para exibir" como vazio');
+});
+
+test('EspaiderAutomator - _hasZeroRows reconhece grid body com 0 linhas', async () => {
+  const auto = new EspaiderAutomator(true);
+  
+  const mockFrame = {
+    locator: (sel) => {
+      if (sel.includes('div.x-grid3-body')) {
+        return {
+          count: async () => 1,
+          nth: () => ({
+            isVisible: async () => true,
+            locator: () => ({ count: async () => 0 })
+          })
+        };
+      }
+      return { count: async () => 0 };
+    }
+  };
+  auto._frames = () => [mockFrame];
+
+  const zeroRows = await auto._hasZeroRows();
+  assert.strictEqual(zeroRows, true, 'Deve reconhecer grid com 0 linhas');
+});
+
+test('OCR - ocrTesseract aceita parâmetro psm com fallback gracioso', async () => {
+  const ocr = require('../../src/protocolos/ocr');
+  assert.strictEqual(typeof ocr.ocrTesseract, 'function');
+  const res = await ocr.ocrTesseract([], 'none', null, { psm: '3' });
+  assert.strictEqual(String(res), '');
+});
+

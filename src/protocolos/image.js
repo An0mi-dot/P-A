@@ -169,17 +169,20 @@ function medianFilter(L, w, h, radius) {
 // Nitidez (convolução laplaciana / sharpen do PIL)
 function sharpenPil(L, w, h) { return sharpen(L, w, h); }
 
+const CONTRAST_LUT = new Uint8Array(256);
+for (let i = 0; i < 256; i++) {
+  const v = Math.round(128 + (i - 128) * 2.0);
+  CONTRAST_LUT[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+}
+
 // preprocess_soft: grayscale -> contraste 2.0 -> sharpen.
-// Sem toWorking: roda na resolução nativa (400dpi) como em _preprocess_image_soft
-// (extractor.py:181-187) — tesseract precisa dos pixels cheios p/ ler os NPUs.
+// Roda na resolução nativa (600/400dpi) — tesseract precisa dos pixels cheios p/ ler os NPUs.
 function preprocessSoft(img) {
   const w = img.width, h = img.height, n = w * h;
   const L = grayscale(img);
-  // ImageEnhance.Contrast(2.0): novo = 128 + (v-128)*factor (arredondado p/ PIL)
   const cont = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    const v = 128 + (L[i] - 128) * 2.0;
-    cont[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+    cont[i] = CONTRAST_LUT[L[i]];
   }
   return pdf.imageFromRGBA(w, h, toRGBA(sharpen(cont, w, h), w, h));
 }

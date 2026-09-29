@@ -186,20 +186,20 @@ async function _getJsWorker() {
   return _jsWorkerPromise;
 }
 
-async function _runJsTesseract(pngBuffer) {
+async function _runJsTesseract(pngBuffer, { psm = '6' } = {}) {
   const worker = await _getJsWorker();
-  const result = await worker.recognize(pngBuffer, {}, { tessedit_pageseg_mode: '6' });
+  const result = await worker.recognize(pngBuffer, {}, { tessedit_pageseg_mode: String(psm) });
   return result && result.data ? result.data.text || '' : '';
 }
 
-function _runNativeTesseract(pngBuffer, tessdataDir) {
+function _runNativeTesseract(pngBuffer, tessdataDir, { psm = '6' } = {}) {
   const exe = _findNativeTesseract();
   if (!exe) {
     if (!_engineWarningShown) {
       _engineWarningShown = true;
       console.warn('[OCR] tesseract.exe não encontrado nas pastas padrão; usando tesseract.js local.');
     }
-    return _runJsTesseract(pngBuffer).catch((error) => {
+    return _runJsTesseract(pngBuffer, { psm }).catch((error) => {
       console.error('[OCR] Falha no tesseract.js local:', error && error.message ? error.message : error);
       return '';
     });
@@ -210,7 +210,7 @@ function _runNativeTesseract(pngBuffer, tessdataDir) {
   return new Promise((resolve) => {
     fs.writeFile(pngPath, pngBuffer, (writeError) => {
       if (writeError) { resolve(''); return; }
-      const args = [pngPath, 'stdout', '--tessdata-dir', effectiveTessdata, '--oem', '1', '--psm', '6', '-l', 'por+eng'];
+      const args = [pngPath, 'stdout', '--tessdata-dir', effectiveTessdata, '--oem', '1', '--psm', String(psm), '-l', 'por+eng'];
       execFile(exe, args, { cwd: path.dirname(exe), maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => {
         try { fs.unlinkSync(pngPath); } catch (e) {}
         try { fs.unlinkSync(base + '.txt'); } catch (e) {}
@@ -229,7 +229,7 @@ function _wrapOcrResult(pages) {
   return res;
 }
 
-async function ocrTesseract(images, preprocess = 'full', onPage) {
+async function ocrTesseract(images, preprocess = 'full', onPage, { psm = '6' } = {}) {
   const n = images.length;
   if (n === 0) return _wrapOcrResult([]);
   const prepFn = {
@@ -248,10 +248,10 @@ async function ocrTesseract(images, preprocess = 'full', onPage) {
     const image = images[index];
     let text = '';
     try {
-      text = await _runNativeTesseract(pdf.toPng(prepFn(image)), BUNDLED_TESSDATA);
+      text = await _runNativeTesseract(pdf.toPng(prepFn(image)), BUNDLED_TESSDATA, { psm });
     } catch (e) {}
     if (!text) {
-      try { text = await _runNativeTesseract(pdf.toPng(image), BUNDLED_TESSDATA); } catch (e) {}
+      try { text = await _runNativeTesseract(pdf.toPng(image), BUNDLED_TESSDATA, { psm }); } catch (e) {}
     }
     output[index] = text || '';
     completed += 1;
@@ -275,8 +275,8 @@ async function ocrTesseract(images, preprocess = 'full', onPage) {
   return _wrapOcrResult(output);
 }
 
-async function ocrTesseractSingle(image, preprocess = 'full') {
-  return ocrTesseract([image], preprocess);
+async function ocrTesseractSingle(image, preprocess = 'full', opts = {}) {
+  return ocrTesseract([image], preprocess, null, opts);
 }
 
 function hasKeyFields(text) {
@@ -298,8 +298,8 @@ function scoreText(text) {
 }
 
 async function ocrMultiEngine(images, onPage) {
-  // Pass 1: soft
-  const softResult = await ocrTesseract(images, 'soft', onPage ? (c, n) => onPage(c, n, 'soft') : null);
+  // Pass 1: soft (com PSM 6 para blocos de texto uniformes)
+  const softResult = await ocrTesseract(images, 'soft', onPage ? (c, n) => onPage(c, n, 'soft') : null, { psm: '6' });
   const softText = String(softResult || '');
   if (softText.trim()) {
     if (hasKeyFields(softText) || ex.findAllNpuPositions(softText).length > 0) {
@@ -307,12 +307,21 @@ async function ocrMultiEngine(images, onPage) {
     }
   }
 
+  // Pass 1b: tolerância a inclinação / páginas rotacionadas com PSM 3 (auto-segmentação)
+  const tiltResult = await ocrTesseract(images, 'soft', onPage ? (c, n) => onPage(c, n, 'tilt') : null, { psm: '3' });
+  const tiltText = String(tiltResult || '');
+  if (tiltText.trim()) {
+    if (hasKeyFields(tiltText) || ex.findAllNpuPositions(tiltText).length > 0) {
+      return tiltResult;
+    }
+  }
+
   if (!_findNativeTesseract()) {
-    return softText.trim() ? softResult : _wrapOcrResult([]);
+    return softText.trim() ? softResult : (tiltText.trim() ? tiltResult : _wrapOcrResult([]));
   }
 
   // Pass 2: full
-  const fullResult = await ocrTesseract(images, 'full', onPage ? (c, n) => onPage(c, n, 'full') : null);
+  const fullResult = await ocrTesseract(images, 'full', onPage ? (c, n) => onPage(c, n, 'full') : null, { psm: '6' });
   const fullText = String(fullResult || '');
   if (fullText.trim()) {
     if (hasKeyFields(fullText) || ex.findAllNpuPositions(fullText).length > 0) {
@@ -321,11 +330,12 @@ async function ocrMultiEngine(images, onPage) {
   }
 
   // Pass 3: aggressive (apenas se nenhum NPU foi encontrado nas anteriores)
-  const aggressiveResult = await ocrTesseract(images, 'aggressive', onPage ? (c, n) => onPage(c, n, 'aggressive') : null);
+  const aggressiveResult = await ocrTesseract(images, 'aggressive', onPage ? (c, n) => onPage(c, n, 'aggressive') : null, { psm: '3' });
   const aggressiveText = String(aggressiveResult || '');
 
   const candidates = [
     { result: softResult, text: softText },
+    { result: tiltResult, text: tiltText },
     { result: fullResult, text: fullText },
     { result: aggressiveResult, text: aggressiveText }
   ].filter(c => c.text.trim());
@@ -349,6 +359,12 @@ async function findArInImages(images) {
       const directResult = ex.findArInText(directText);
       if (directResult && directResult.length === 13) return directResult;
       if (directResult && !bestResult) bestResult = directResult;
+
+      // 1b. OCR direto com PSM 3 (caso a página ou AR estejam inclinados)
+      const directTextTilt = String(await ocrTesseractSingle(image, 'none', { psm: '3' }));
+      const directResultTilt = ex.findArInText(directTextTilt);
+      if (directResultTilt && directResultTilt.length === 13) return directResultTilt;
+      if (directResultTilt && !bestResult) bestResult = directResultTilt;
 
       // 2. Metade inferior sem pré-processamento ('none')
       const cropImage = pdf.cropImage(image, 0, Math.floor(image.height / 2), image.width, image.height);

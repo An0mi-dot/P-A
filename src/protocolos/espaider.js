@@ -252,10 +252,17 @@ class EspaiderAutomator {
         const selectors = [
           'div.x-grid-empty-text',
           'div.x-grid-empty',
-          'div.x-grid3-body:has-text("Nenhum")',
-          'div.x-toolbar:has-text("Nenhum registro")',
-          'div:has-text("Nenhum registro")',
-          'div:has-text("Nenhum registro encontrado")',
+          'div.x-grid3-empty',
+          'div.x-paging-info',
+          'div.x-toolbar-text',
+          'div.x-toolbar',
+          '.x-status-text',
+          'div.x-grid3-body',
+          'div.x-grid-body',
+          'div:has-text("Nenhum")',
+          'div:has-text("Sem registros")',
+          'div:has-text("0 de 0")',
+          'div:has-text("0 registros")',
         ];
         for (const sel of selectors) {
           const loc = frame.locator(sel);
@@ -270,13 +277,38 @@ class EspaiderAutomator {
                 txt.includes('não há registros') ||
                 txt.includes('nao ha registros') ||
                 txt.includes('não foram encontrados') ||
+                txt.includes('nao foram encontrados') ||
                 txt.includes('sem registros') ||
+                txt.includes('nenhum resultado') ||
+                txt.includes('nenhum processo') ||
+                txt.includes('nada a exibir') ||
+                txt.includes('sem dados') ||
                 txt.includes('0 de 0') ||
-                txt.includes('0 registros')
+                txt.includes('0 registros') ||
+                txt.includes('0 - 0 de 0') ||
+                txt.includes('exibindo 0')
               ) {
                 return true;
               }
             }
+          }
+        }
+      } catch (e) {}
+    }
+    return false;
+  }
+
+  async _hasZeroRows() {
+    for (const frame of this._frames()) {
+      try {
+        const bodyLoc = frame.locator('div.x-grid3-body, div.x-grid-body, div.x-grid-view, div.x-grid3-scroller');
+        const bodyCount = await bodyLoc.count().catch(() => 0);
+        for (let b = 0; b < bodyCount; b++) {
+          const body = bodyLoc.nth(b);
+          if (await body.isVisible().catch(() => false)) {
+            const rows = body.locator('tr.x-grid-row, tr.x-grid3-row, div.x-grid-row');
+            const nRows = await rows.count().catch(() => 0);
+            if (nRows === 0) return true;
           }
         }
       } catch (e) {}
@@ -360,13 +392,15 @@ class EspaiderAutomator {
       await this._typeClear(filterIn, npuRaw, true);
       await this.page.waitForTimeout(600);
 
+      let sawMask = false;
       let keyPressRetried = false;
       const typeTime = Date.now();
 
       while (Date.now() < deadline) {
         const isMasked = await this._isGridMasked();
+        if (isMasked) sawMask = true;
 
-        // Verifica se a linha com o NPU já está presente
+        // 1. Verifica se a linha com o NPU já está presente
         const row = await this._findNpuRow(npuRaw, npuDigits);
         if (row) {
           const tds = row.locator('td');
@@ -380,14 +414,30 @@ class EspaiderAutomator {
           return res;
         }
 
-        // Se NÃO estiver em carregamento, verifica se a mensagem de "nenhum registro" apareceu
+        // 2. Se NÃO estiver em carregamento, verifica se o Espaider indicou vazio (ou 0 linhas)
         if (!isMasked) {
-          if (await this._gridEmpty()) {
-            await this.page.waitForTimeout(400);
-            if (await this._gridEmpty() && !(await this._isGridMasked())) {
-              const res = { ok: true, found: false, escritorio: '', error: null, timedOut: false };
-              this.lastSearch = res;
-              return res;
+          const elapsed = Date.now() - typeTime;
+          // Dá tempo para a busca ser iniciada caso a máscara demore alguns milissegundos
+          const queryHadTimeToRun = sawMask || elapsed > 1500;
+
+          if (queryHadTimeToRun) {
+            const isEmptyText = await this._gridEmpty();
+            const isZeroRows = await this._hasZeroRows();
+
+            if (isEmptyText || isZeroRows) {
+              await this.page.waitForTimeout(400);
+              const stillMasked = await this._isGridMasked();
+              if (!stillMasked) {
+                const confirmRow = await this._findNpuRow(npuRaw, npuDigits);
+                if (confirmRow) continue;
+
+                const confirmEmpty = (await this._gridEmpty()) || (await this._hasZeroRows());
+                if (confirmEmpty) {
+                  const res = { ok: true, found: false, escritorio: '', error: null, timedOut: false };
+                  this.lastSearch = res;
+                  return res;
+                }
+              }
             }
           }
         }
