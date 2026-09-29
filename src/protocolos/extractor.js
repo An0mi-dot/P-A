@@ -97,7 +97,16 @@ function isValidNpuCandidate(digits) {
   return true;
 }
 
-function findNpu(text) {
+function normalizeOcrDigits(str) {
+  return (str || '')
+    .replace(/[OoQq]/g, '0')
+    .replace(/[Il|!/]/g, '1')
+    .replace(/[Ss]/g, '5')
+    .replace(/[Bb]/g, '8')
+    .replace(/[Zz]/g, '2');
+}
+
+function _findNpuDirect(text) {
   // Full 20-digit NPU with separators
   const m2 = /(\d{7})[\s\-\.,]*(\d{2})[\s\.,]*(\d{4})[\s\.,]*(\d)[\s\.,]*(\d{2})[\s\.,]*(\d{4})/.exec(text);
   if (m2) {
@@ -129,6 +138,26 @@ function findNpu(text) {
         return normalizeNpu(`${padded.slice(0, 7)}-${padded.slice(7, 9)}.${padded.slice(9, 13)}.${padded[13]}.${padded.slice(14, 16)}.${padded.slice(16)}`);
       }
     }
+  }
+
+  return null;
+}
+
+function findNpu(text) {
+  if (!text) return null;
+  const direct = _findNpuDirect(text);
+  if (direct) return direct;
+
+  // Resiliência OCR: normaliza confusão de dígitos em padrões de NPU (ex.: '8O' -> '80', 'I' -> '1')
+  const normText = text.replace(/([0-9OoIlSsBbZz\.\-\,\s]{16,32})/g, (match) => {
+    if (/[\-\.]/.test(match)) {
+      return normalizeOcrDigits(match);
+    }
+    return match;
+  });
+  if (normText !== text) {
+    const fromNorm = _findNpuDirect(normText);
+    if (fromNorm) return fromNorm;
   }
 
   return null;
@@ -495,25 +524,50 @@ function findAudienciaDatetime(text) {
 // ---------------------------------------------------------------------------
 // AR
 // ---------------------------------------------------------------------------
+function normalizeArDigits(rawStr) {
+  if (!rawStr) return '';
+  return rawStr
+    .toUpperCase()
+    .replace(/[OQ]/g, '0')
+    .replace(/[IL|/!]/g, '1')
+    .replace(/[Z]/g, '2')
+    .replace(/[S]/g, '5')
+    .replace(/[G]/g, '6')
+    .replace(/[B]/g, '8')
+    .replace(/\D/g, '');
+}
+
 function findArInText(text) {
-  const m = /\bY\s*[H]?\s*([0-9O\s]{5,11})\s*[B]?[R]?\b/i.exec(text);
+  if (!text) return null;
+
+  // 1. Padrão completo com prefixo de 2 letras (YH, JR, QC, etc.) e sufixo BR (tolerando B8/PR)
+  const m = /\b([A-Z]{2})\s*([0-9OIlSBoZG\s]{7,13})\s*([B8P]\s*[R])\b/i.exec(text);
   if (m) {
-    let middle = m[1].toUpperCase().replace(/O/g, '0').replace(/o/g, '0');
-    middle = middle.replace(/\s+/g, '');
-    if (middle.startsWith('20') && middle.length === 8) middle = '0' + middle;
-    else if (middle.startsWith('87') && middle.length === 8) middle = '0' + middle;
-    if (middle.startsWith('20') && middle.length === 7) middle = '0' + middle;
-    else if (middle.startsWith('87') && middle.length === 7) middle = '0' + middle;
-    if (middle.length >= 6) return `YH${middle}BR`;
+    const prefix = m[1].toUpperCase();
+    const digits = normalizeArDigits(m[2]);
+    if (digits.length === 9) return `${prefix}${digits}BR`;
+    if (digits.length >= 7 && digits.length <= 11) return `${prefix}${digits.slice(-9).padStart(9, '0')}BR`;
   }
+
+  // 2. Padrão com prefixo YH flexível
+  const m2 = /\bY\s*[H]?\s*([0-9OIlSBoZG\s]{5,12})\s*[B8P]?[R]?\b/i.exec(text);
+  if (m2) {
+    let digits = normalizeArDigits(m2[1]);
+    if (digits.startsWith('20') && digits.length === 8) digits = '0' + digits;
+    else if (digits.startsWith('87') && digits.length === 8) digits = '0' + digits;
+    if (digits.startsWith('20') && digits.length === 7) digits = '0' + digits;
+    else if (digits.startsWith('87') && digits.length === 7) digits = '0' + digits;
+    if (digits.length >= 6) return `YH${digits}BR`;
+  }
+
   return null;
 }
 
 function findAllArPositions(text) {
+  if (!text) return [];
   const positions = [];
-  for (const m of text.matchAll(/\bY\s*[H]?\s*[0-9O\s]{5,11}\s*[B]?[R]?\b/gi)) {
-    const raw = m[0];
-    const middle = raw.replace(/O/g, '0').replace(/o/g, '0').replace(/\D/g, '');
+  for (const m of text.matchAll(/\b([A-Z]{2}|Y\s*[H]?)\s*([0-9OIlSBoZG\s]{5,13})\s*([B8P]?\s*[R]?)\b/gi)) {
+    const middle = normalizeArDigits(m[2]);
     if (middle.length >= 6) positions.push(m.index + m[0].length);
   }
   return [...new Set(positions)].sort((a, b) => a - b);

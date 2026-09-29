@@ -120,3 +120,41 @@ test('OCR - ocrTesseract aceita parâmetro psm com fallback gracioso', async () 
   assert.strictEqual(String(res), '');
 });
 
+test('Extractor - findArInText recupera códigos com confusão de caracteres OCR', () => {
+  const ex = require('../../src/protocolos/extractor');
+  
+  // Confusão com letra I no lugar do dígito 1
+  assert.strictEqual(ex.findArInText('AVISO DE RECEBIMENTO YH 2589I4121 BR'), 'YH258914121BR');
+  
+  // Confusão com letra O no lugar do dígito 0
+  assert.strictEqual(ex.findArInText('AR YH2589O2035BR'), 'YH258902035BR');
+  
+  // Confusão com espaços e sufixo 8R
+  assert.strictEqual(ex.findArInText('AR YH 258 914 121 8R'), 'YH258914121BR');
+  
+  // Prefixo alternativo (ex: JR)
+  assert.strictEqual(ex.findArInText('CORREIOS JR 123456789 BR'), 'JR123456789BR');
+});
+
+test('Extractor - findNpu recupera NPU com dígitos lidos como letras (O/0)', () => {
+  const ex = require('../../src/protocolos/extractor');
+  
+  const rawWithO = 'PROCESSO: 0189557-8O.2026.8.05.0001';
+  const npu = ex.findNpu(rawWithO);
+  assert.strictEqual(npu, '0189557-80.2026.8.05.0001');
+});
+
+test('PDF - rotate180 e rotateAngle geram imagens válidas com dimensões corretas', () => {
+  const pdf = require('../../src/protocolos/pdf');
+  const dummyImg = pdf.createImage(100, 200);
+  
+  const rot180 = pdf.rotate180(dummyImg);
+  assert.strictEqual(rot180.width, 100);
+  assert.strictEqual(rot180.height, 200);
+  
+  const rotAngle = pdf.rotateAngle(dummyImg, 3);
+  assert.strictEqual(rotAngle.width, 100);
+  assert.strictEqual(rotAngle.height, 200);
+});
+
+

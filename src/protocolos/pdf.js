@@ -85,6 +85,39 @@ function rotate90(img) {
   return dst;
 }
 
+function rotate180(img) {
+  const dst = createImage(img.width, img.height);
+  const ctx = dst.canvas.getContext('2d');
+  ctx.save();
+  ctx.translate(dst.width / 2, dst.height / 2);
+  ctx.rotate(Math.PI);
+  ctx.drawImage(img.canvas, -img.width / 2, -img.height / 2);
+  ctx.restore();
+  return dst;
+}
+
+function rotate270(img) {
+  const dst = createImage(img.height, img.width);
+  const ctx = dst.canvas.getContext('2d');
+  ctx.save();
+  ctx.translate(dst.width / 2, dst.height / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(img.canvas, -img.width / 2, -img.height / 2);
+  ctx.restore();
+  return dst;
+}
+
+function rotateAngle(img, angleDeg) {
+  const dst = createImage(img.width, img.height);
+  const ctx = dst.canvas.getContext('2d');
+  ctx.save();
+  ctx.translate(dst.width / 2, dst.height / 2);
+  ctx.rotate(angleDeg * Math.PI / 180);
+  ctx.drawImage(img.canvas, -img.width / 2, -img.height / 2);
+  ctx.restore();
+  return dst;
+}
+
 // --- PDF rendering ---
 function buildCanvasFactory() {
   return class {
@@ -145,6 +178,6 @@ async function extractTextPdf(pdfPath) {
 
 module.exports = {
   createImage, toPng, toJpeg, pixelsRGBA, imageFromRGBA,
-  cropImage, resizeImage, rotate90,
+  cropImage, resizeImage, rotate90, rotate180, rotate270, rotateAngle,
   renderPages, extractTextPdf,
 };

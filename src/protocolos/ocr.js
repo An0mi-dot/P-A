@@ -366,6 +366,13 @@ async function findArInImages(images) {
       if (directResultTilt && directResultTilt.length === 13) return directResultTilt;
       if (directResultTilt && !bestResult) bestResult = directResultTilt;
 
+      // 1c. Página invertida em 180 graus (muito comum em alimentadores duplex de scanners de mesa)
+      const img180 = pdf.rotate180(image);
+      const text180 = String(await ocrTesseractSingle(img180, 'none'));
+      const res180 = ex.findArInText(text180);
+      if (res180 && res180.length === 13) return res180;
+      if (res180 && !bestResult) bestResult = res180;
+
       // 2. Metade inferior sem pré-processamento ('none')
       const cropImage = pdf.cropImage(image, 0, Math.floor(image.height / 2), image.width, image.height);
       const cropTextNone = String(await ocrTesseractSingle(cropImage, 'none'));
@@ -379,11 +386,25 @@ async function findArInImages(images) {
       if (cropResultSoft && cropResultSoft.length === 13) return cropResultSoft;
       if (cropResultSoft && !bestResult) bestResult = cropResultSoft;
 
-      // 4. Scan rotacionado em 90 graus
-      const rotatedText = String(await ocrTesseractSingle(pdf.rotate90(cropImage), 'soft'));
-      const rotatedResult = ex.findArInText(rotatedText);
-      if (rotatedResult && rotatedResult.length === 13) return rotatedResult;
-      if (rotatedResult && !bestResult) bestResult = rotatedResult;
+      // 4. Scan rotacionado em 90 graus e 270 graus
+      const rot90Text = String(await ocrTesseractSingle(pdf.rotate90(cropImage), 'soft'));
+      const rot90Result = ex.findArInText(rot90Text);
+      if (rot90Result && rot90Result.length === 13) return rot90Result;
+      if (rot90Result && !bestResult) bestResult = rot90Result;
+
+      const rot270Text = String(await ocrTesseractSingle(pdf.rotate270(cropImage), 'soft'));
+      const rot270Result = ex.findArInText(rot270Text);
+      if (rot270Result && rot270Result.length === 13) return rot270Result;
+      if (rot270Result && !bestResult) bestResult = rot270Result;
+
+      // 5. Micro-rotações (+3° e -3°) para comprovantes colados levemente tortos
+      for (const angle of [3, -3]) {
+        const microRot = pdf.rotateAngle(cropImage, angle);
+        const microText = String(await ocrTesseractSingle(microRot, 'none', { psm: '3' }));
+        const microRes = ex.findArInText(microText);
+        if (microRes && microRes.length === 13) return microRes;
+        if (microRes && !bestResult) bestResult = microRes;
+      }
     } catch (e) {}
   }
   return bestResult;
