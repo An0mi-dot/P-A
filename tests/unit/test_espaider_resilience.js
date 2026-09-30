@@ -6,7 +6,7 @@ const { EspaiderAutomator } = require('../../src/protocolos/espaider');
 
 test('EspaiderAutomator - Inicialização com timeouts generosos', () => {
   const defaultAuto = new EspaiderAutomator(true);
-  assert.strictEqual(defaultAuto.timeoutMs, 45000, 'Timeout padrão deve ser 45 segundos (45000ms)');
+  assert.strictEqual(defaultAuto.timeoutMs, 25000, 'Timeout padrão deve ser 25 segundos (25000ms)');
 
   const customAuto = new EspaiderAutomator(true, { timeoutMs: 60000 });
   assert.strictEqual(customAuto.timeoutMs, 60000, 'Deve respeitar timeout customizado');
@@ -156,5 +156,25 @@ test('PDF - rotate180 e rotateAngle geram imagens válidas com dimensões corret
   assert.strictEqual(rotAngle.width, 100);
   assert.strictEqual(rotAngle.height, 200);
 });
+
+test('Extractor - cleanParteName e findPartes removem qualificações e cauda jurídica', () => {
+  const ex = require('../../src/protocolos/extractor');
+
+  // Caso relatado pelo usuário: ', também acima nomeada, s. a. parte ré'
+  const parteSujia1 = 'MARIA DA SILVA, também acima nomeada, s. a. parte ré';
+  assert.strictEqual(ex.cleanParteName(parteSujia1), 'MARIA DA SILVA');
+
+  const parteSujia2 = 'JOAO PEREIRA DOS SANTOS, devidamente qualificado nos autos';
+  assert.strictEqual(ex.cleanParteName(parteSujia2), 'JOAO PEREIRA DOS SANTOS');
+
+  const parteSujia3 = 'EMPRESA XPTO LTDA - PARTE RÉ';
+  assert.strictEqual(ex.cleanParteName(parteSujia3), 'EMPRESA XPTO LTDA');
+
+  // Testando com findPartes em bloco de texto
+  const texto = 'PARTE(S) AUTORA(S): CARLOS EDUARDO DE OLIVEIRA, também acima nomeado, s. a. parte ré\nPROCESSO: 0001234-56.2025.8.05.0001';
+  const extraido = ex.findPartes(texto);
+  assert.strictEqual(extraido, 'CARLOS EDUARDO DE OLIVEIRA');
+});
+
 
 

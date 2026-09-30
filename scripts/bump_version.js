@@ -25,6 +25,7 @@ function readJSON(p) {
 }
 
 function writeJSON(p, obj) {
+  fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, JSON.stringify(obj, null, 2) + '\n', 'utf8');
 }
 

@@ -179,6 +179,9 @@ function applyOcrFixes(v) {
 }
 
 function cleanParteName(v) {
+  if (!v) return '';
+  // Remove qualificações jurídicas e cauda de partes (ex.: ', também acima nomeada, s. a. parte ré')
+  v = v.split(/[,;\-–—]?\s*(?:tamb[eé]m\s+(?:acima\s+)?nomead[oa]|tamb[eé]m\s+(?:acima\s+)?qualificad[oa]|acima\s+nomead[oa]|acima\s+qualificad[oa]|j[aá]\s+qualificad[oa]|devidamente\s+qualificad[oa]|s[\.\s]*a[\.\s]*parte\s+r[eé]|parte\s+r[eé]|parte\s+autor[a]|polo\s+ativ[oa]|polo\s+passiv[oa]|qualificad[oa]\s+nos\s+autos|inscrit[oa]\s+no\s+cpf|representad[oa]\s+por)(?:[\s,;\.\-–—]|$)/i)[0];
   v = v.replace(/^([A-ZÀ-Ý])\1{2,}\s*/, '');
   v = v.replace(/[\.]+$/, '');
   v = v.replace(/[,]\s*$/, '');
@@ -213,11 +216,11 @@ function cleanParteName(v) {
 
 function findPartes(text) {
   const patterns = [
-    /PARTE\(S\)\s+AUTORA\(S\)\s*[:\-–]?\s*(.+?)(?=PARTE\(S\)\s+R[EÉ]U|PARTE\(S\)\s+R[EÉ]\(S\)|PROCESSO|REQUERID[OA]|\bR[EÉ]U\b|RÉU|ADVOGADO|OAB|$)/is,
-    /PARTE\(S\)\s*(?:AUTORA\(S\))?\s*[:\-–]?\s*(.+?)(?=PARTE\(S\)\s+R[EÉÉ]U|PARTE\(S\)\s+R[ÉE]\(S\)|PROCESSO|REQUERID[OA]|\bR[EÉ]U\b|RÉU|ADVOGADO|OAB|$)/is,
-    /AUTORA\(S\)\s*[:\-–]?\s*(.+?)(?=PARTE\(S\)|RÉU|REQUERID[OA]|PROCESSO|ADVOGADO|\bR[EÉ]U\b|$)/is,
-    /REQUERENTE\s*[:\-–]?\s*(.+?)(?=REQUERID[OA]|RÉU|PROCESSO|PARTE\(S\)|ADVOGADO|$)/is,
-    /PARTE\(S\)[:\-–]?\s*(.+?)(?=PROCESSO|REQUERID[OA]|\bR[EÉ]U\b|RÉU|ADVOGADO|OAB|$)/is,
+    /PARTE\(S\)\s+AUTORA\(S\)\s*[:\-–]?\s*(.+?)(?=PARTE\(S\)\s+R[EÉ]U|PARTE\(S\)\s+R[EÉ]\(S\)|PROCESSO|REQUERID[OA]|\bR[EÉ]U\b|RÉU|ADVOGADO|OAB|tamb[eé]m\s+acima\s+nomead|$)/is,
+    /PARTE\(S\)\s*(?:AUTORA\(S\))?\s*[:\-–]?\s*(.+?)(?=PARTE\(S\)\s+R[EÉÉ]U|PARTE\(S\)\s+R[ÉE]\(S\)|PROCESSO|REQUERID[OA]|\bR[EÉ]U\b|RÉU|ADVOGADO|OAB|tamb[eé]m\s+acima\s+nomead|$)/is,
+    /AUTORA\(S\)\s*[:\-–]?\s*(.+?)(?=PARTE\(S\)|RÉU|REQUERID[OA]|PROCESSO|ADVOGADO|\bR[EÉ]U\b|tamb[eé]m\s+acima\s+nomead|$)/is,
+    /REQUERENTE\s*[:\-–]?\s*(.+?)(?=REQUERID[OA]|RÉU|PROCESSO|PARTE\(S\)|ADVOGADO|tamb[eé]m\s+acima\s+nomead|$)/is,
+    /PARTE\(S\)[:\-–]?\s*(.+?)(?=PROCESSO|REQUERID[OA]|\bR[EÉ]U\b|RÉU|ADVOGADO|OAB|tamb[eé]m\s+acima\s+nomead|$)/is,
   ];
   for (const pat of patterns) {
     const m = pat.exec(text);

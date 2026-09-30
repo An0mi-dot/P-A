@@ -364,7 +364,7 @@ async function processFiles(ctx, opts) {
   }
 
   // Espaider
-  const espaiderTimeout = Number(cfg.espaider_timeout) || 45000;
+  const espaiderTimeout = Number(cfg.espaider_timeout) || 25000;
   clog('dim', `Inicializando consulta ao Espaider (timeout: ${Math.round(espaiderTimeout / 1000)}s)...`);
   const espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
   let espaiderOk = false;
@@ -470,14 +470,9 @@ async function processFiles(ctx, opts) {
             clog('dim', '  - Processo não cadastrado no Espaider');
             consecutiveErrors = 0;
           } else if (!st.ok || st.timedOut) {
-            clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
-            consecutiveErrors += 1;
-            await espaider.recoverSession();
-            if (consecutiveErrors >= 3) {
-              clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
-              await forceEspaiderRestart();
-              consecutiveErrors = 0;
-            }
+            clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Reiniciando navegador...`);
+            await forceEspaiderRestart();
+            consecutiveErrors = 0;
           }
         }
 
@@ -555,7 +550,7 @@ async function consultarNpus(ctx, opts) {
   clog('highlight', `Consultando ${total} NPU(s) no Espaider...`);
 
   const cfg = config.loadConfig() || {};
-  const espaiderTimeout = Number(cfg.espaider_timeout) || 45000;
+  const espaiderTimeout = Number(cfg.espaider_timeout) || 25000;
   const espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
   let espaiderOk = false;
   if (user && pwd) {
@@ -582,6 +577,7 @@ async function consultarNpus(ctx, opts) {
   };
 
   let consecutiveErrors = 0;
+  let totalEspaiderCalls = 0;
   const fb = new FallbackConsultant();
   await fb.ready;
   fb._normalize();
@@ -594,6 +590,11 @@ async function consultarNpus(ctx, opts) {
 
     let escritorio = '';
     if (espaiderOk) {
+      if (totalEspaiderCalls > 0 && totalEspaiderCalls % 35 === 0) {
+        clog('dim', `  - Reiniciando Espaider por precaução (lote de ${totalEspaiderCalls} consultas)`);
+        await forceEspaiderRestart();
+      }
+      totalEspaiderCalls += 1;
       try {
         escritorio = await espaider.searchNpu(npu);
       } catch (e) {
@@ -615,14 +616,9 @@ async function consultarNpus(ctx, opts) {
         clog('dim', '  - Processo não cadastrado no Espaider');
         consecutiveErrors = 0;
       } else if (!st.ok || st.timedOut) {
-        clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Estabilizando sessão...`);
-        consecutiveErrors += 1;
-        await espaider.recoverSession();
-        if (consecutiveErrors >= 3) {
-          clog('warning', '  - Múltiplos timeouts consecutivos no Espaider. Reiniciando sessão...');
-          await forceEspaiderRestart();
-          consecutiveErrors = 0;
-        }
+        clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Reiniciando navegador...`);
+        await forceEspaiderRestart();
+        consecutiveErrors = 0;
       }
     }
 

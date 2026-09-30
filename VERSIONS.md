@@ -321,3 +321,7 @@ Iberdrola corporate proxy (ADFS/SAML) intercepting CDN and Supabase API calls.
 
 - Commit: 4295319
 - Notes: feat(protocolos): integra Protocolos Postais ao instalador e reformula portal
+## v3.2.5 - 2026-09-30
+
+- Commit: 3f2f010
+- Notes: feat(ocr): adiciona recuperacao de confusao OCR em NPU/AR e rotacoes 180/micro-angulos [skip ci]

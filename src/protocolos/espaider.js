@@ -14,8 +14,8 @@ class EspaiderAutomator {
     this._filterLocator = null; // cache do input de filtro
     this._user = '';
     this._pwd = '';
-    // Timeout generoso: padrão 45 segundos (Spider é lento em muitas operações)
-    this.timeoutMs = options.timeoutMs || 45000;
+    // Timeout generoso: padrão 25 segundos (equilíbrio entre lentidão do Spider e rapidez de resposta)
+    this.timeoutMs = options.timeoutMs || 25000;
     this.lastSearch = null;
   }
 
@@ -95,8 +95,8 @@ class EspaiderAutomator {
           const count = await loc.count().catch(() => 0);
           for (let i = 0; i < count; i++) {
             const el = loc.nth(i);
-            const vis = await el.isVisible().catch(() => false);
-            const enb = await el.isEnabled().catch(() => false);
+            const vis = await el.isVisible({ timeout: 400 }).catch(() => false);
+            const enb = await el.isEnabled({ timeout: 400 }).catch(() => false);
             if (vis && enb) return el;
           }
         }
@@ -104,8 +104,8 @@ class EspaiderAutomator {
         const cnt = await xloc.count().catch(() => 0);
         for (let i = 0; i < cnt; i++) {
           const el = xloc.nth(i);
-          const vis = await el.isVisible().catch(() => false);
-          const enb = await el.isEnabled().catch(() => false);
+          const vis = await el.isVisible({ timeout: 400 }).catch(() => false);
+          const enb = await el.isEnabled({ timeout: 400 }).catch(() => false);
           if (vis && enb) return el;
         }
       } catch (e) {}
@@ -115,7 +115,11 @@ class EspaiderAutomator {
 
   async _filterVisible(loc) {
     try {
-      if (loc && loc.page) return (await loc.isVisible()) && (await loc.isEnabled());
+      if (loc && loc.page) {
+        const vis = await loc.isVisible({ timeout: 400 }).catch(() => false);
+        if (!vis) return false;
+        return await loc.isEnabled({ timeout: 400 }).catch(() => false);
+      }
     } catch (e) {}
     return false;
   }
@@ -129,22 +133,23 @@ class EspaiderAutomator {
   async _isGridMasked() {
     for (const frame of this._frames()) {
       try {
-        const masks = frame.locator('.x-mask-loading, .x-mask, div.loading-indicator, div:has-text("Carregando...")');
+        // Apenas elementos reais de máscara de carregamento do ExtJS (não .x-mask genérico de backdrop)
+        const masks = frame.locator('.x-mask-loading, .ext-el-mask-msg, div.loading-indicator, div.x-grid-load-mask');
         const count = await masks.count().catch(() => 0);
         for (let i = 0; i < count; i++) {
-          if (await masks.nth(i).isVisible().catch(() => false)) return true;
+          if (await masks.nth(i).isVisible({ timeout: 300 }).catch(() => false)) return true;
         }
       } catch (e) {}
     }
     return false;
   }
 
-  async _waitForMaskClear(timeoutMs = 15000) {
+  async _waitForMaskClear(timeoutMs = 4000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const masked = await this._isGridMasked();
       if (!masked) return true;
-      if (this.page) await this.page.waitForTimeout(300);
+      if (this.page) await this.page.waitForTimeout(200);
     }
     return false;
   }
@@ -200,12 +205,12 @@ class EspaiderAutomator {
   }
 
   async _typeClear(loc, text, pressEnter = true) {
-    try { await loc.click({ timeout: 5000 }); } catch (e) {}
-    try { await loc.evaluate((el) => { el.value = ''; }); } catch (e) {}
-    try { await loc.press('Control+a'); } catch (e) {}
-    try { await loc.press('Backspace'); } catch (e) {}
     try {
-      await loc.fill(text, { timeout: 5000 });
+      await loc.click({ timeout: 2000 }).catch(() => {});
+      await loc.fill(text, { timeout: 3000 });
+      if (pressEnter) {
+        await loc.press('Enter', { timeout: 1500 }).catch(() => {});
+      }
     } catch (e) {
       try {
         await loc.evaluate((el, val) => {
@@ -213,16 +218,10 @@ class EspaiderAutomator {
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
         }, text);
+        if (pressEnter) {
+          await loc.press('Enter', { timeout: 1500 }).catch(() => {});
+        }
       } catch (e2) {}
-    }
-    try {
-      await loc.evaluate((el) => {
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-    } catch (e) {}
-    if (pressEnter) {
-      try { await loc.press('Enter'); } catch (e) {}
     }
   }
 
@@ -254,24 +253,20 @@ class EspaiderAutomator {
           'div.x-grid-empty',
           'div.x-grid3-empty',
           'div.x-paging-info',
-          'div.x-toolbar-text',
-          'div.x-toolbar',
           '.x-status-text',
-          'div.x-grid3-body',
-          'div.x-grid-body',
-          'div:has-text("Nenhum")',
           'div:has-text("Sem registros")',
+          'div:has-text("Nenhum")',
           'div:has-text("0 de 0")',
           'div:has-text("0 registros")',
         ];
         for (const sel of selectors) {
           const loc = frame.locator(sel);
           const count = await loc.count().catch(() => 0);
-          for (let i = 0; i < count; i++) {
+          for (let i = 0; i < Math.min(count, 5); i++) {
             const el = loc.nth(i);
-            const vis = await el.isVisible().catch(() => false);
+            const vis = await el.isVisible({ timeout: 200 }).catch(() => false);
             if (vis) {
-              const txt = ((await el.textContent({ timeout: 1000 }).catch(() => '')) || '').toLowerCase();
+              const txt = ((await el.textContent({ timeout: 300 }).catch(() => '')) || '').toLowerCase();
               if (
                 txt.includes('nenhum registro') ||
                 txt.includes('não há registros') ||
@@ -305,7 +300,7 @@ class EspaiderAutomator {
         const bodyCount = await bodyLoc.count().catch(() => 0);
         for (let b = 0; b < bodyCount; b++) {
           const body = bodyLoc.nth(b);
-          if (await body.isVisible().catch(() => false)) {
+          if (await body.isVisible({ timeout: 200 }).catch(() => false)) {
             const rows = body.locator('tr.x-grid-row, tr.x-grid3-row, div.x-grid-row');
             const nRows = await rows.count().catch(() => 0);
             if (nRows === 0) return true;
@@ -326,7 +321,7 @@ class EspaiderAutomator {
           const btnOk = frame.locator('.x-window-dlg button:has-text("OK"), .x-message-box button:has-text("OK"), button:has-text("Fechar")');
           const n = await btnOk.count().catch(() => 0);
           for (let i = 0; i < n; i++) {
-            if (await btnOk.nth(i).isVisible().catch(() => false)) {
+            if (await btnOk.nth(i).isVisible({ timeout: 300 }).catch(() => false)) {
               await btnOk.nth(i).click().catch(() => {});
             }
           }
@@ -334,7 +329,7 @@ class EspaiderAutomator {
       }
 
       // 2. Aguarda máscaras de carregamento ativas sumirem
-      await this._waitForMaskClear(8000);
+      await this._waitForMaskClear(4000);
 
       // 3. Tenta localizar e limpar o campo de filtro para restaurar a grid
       let f = this._filterLocator;
@@ -345,11 +340,11 @@ class EspaiderAutomator {
 
       if (f && (await this._filterVisible(f))) {
         await this._typeClear(f, '', true);
-        await this.page.waitForTimeout(1000);
+        await this.page.waitForTimeout(600);
       } else {
         // Se realmente perdeu a tela do Contencioso, re-clica
         await this._clickContencioso();
-        await this.page.waitForTimeout(2000);
+        await this.page.waitForTimeout(1500);
         this._filterLocator = await this._findFilter();
       }
     } catch (e) {
@@ -374,7 +369,7 @@ class EspaiderAutomator {
     }
     const npuDigits = npuRaw.replace(/\D/g, '');
 
-    const timeoutMs = options.timeoutMs || this.timeoutMs || 45000;
+    const timeoutMs = options.timeoutMs || this.timeoutMs || 25000;
     const deadline = Date.now() + timeoutMs;
 
     try {
@@ -386,11 +381,11 @@ class EspaiderAutomator {
       }
 
       // Aguarda qualquer requisição pendente anterior finalizar
-      await this._waitForMaskClear(10000);
+      await this._waitForMaskClear(4000);
 
       // Digita o NPU e aciona a pesquisa
       await this._typeClear(filterIn, npuRaw, true);
-      await this.page.waitForTimeout(600);
+      await this.page.waitForTimeout(300);
 
       let sawMask = false;
       let keyPressRetried = false;
@@ -414,43 +409,39 @@ class EspaiderAutomator {
           return res;
         }
 
-        // 2. Se NÃO estiver em carregamento, verifica se o Espaider indicou vazio (ou 0 linhas)
-        if (!isMasked) {
-          const elapsed = Date.now() - typeTime;
-          // Dá tempo para a busca ser iniciada caso a máscara demore alguns milissegundos
-          const queryHadTimeToRun = sawMask || elapsed > 1500;
+        // 2. Verifica se o Espaider indicou vazio (ou 0 linhas)
+        // Se a máscara já foi vista e sumiu, ou se já passaram pelo menos 800ms desde a digitação
+        const elapsed = Date.now() - typeTime;
+        if (!isMasked && (sawMask || elapsed > 800)) {
+          const isEmptyText = await this._gridEmpty();
+          const isZeroRows = await this._hasZeroRows();
 
-          if (queryHadTimeToRun) {
-            const isEmptyText = await this._gridEmpty();
-            const isZeroRows = await this._hasZeroRows();
+          if (isEmptyText || isZeroRows) {
+            await this.page.waitForTimeout(200);
+            const stillMasked = await this._isGridMasked();
+            if (!stillMasked) {
+              const confirmRow = await this._findNpuRow(npuRaw, npuDigits);
+              if (confirmRow) continue;
 
-            if (isEmptyText || isZeroRows) {
-              await this.page.waitForTimeout(400);
-              const stillMasked = await this._isGridMasked();
-              if (!stillMasked) {
-                const confirmRow = await this._findNpuRow(npuRaw, npuDigits);
-                if (confirmRow) continue;
-
-                const confirmEmpty = (await this._gridEmpty()) || (await this._hasZeroRows());
-                if (confirmEmpty) {
-                  const res = { ok: true, found: false, escritorio: '', error: null, timedOut: false };
-                  this.lastSearch = res;
-                  return res;
-                }
+              const confirmEmpty = (await this._gridEmpty()) || (await this._hasZeroRows());
+              if (confirmEmpty) {
+                const res = { ok: true, found: false, escritorio: '', error: null, timedOut: false };
+                this.lastSearch = res;
+                return res;
               }
             }
           }
         }
 
-        // Se passou mais de 16s sem máscara e sem resultado, tenta pressionar Enter novamente
-        if (!keyPressRetried && (Date.now() - typeTime > 16000) && !isMasked) {
+        // Se passou mais de 6s sem máscara e sem resultado, tenta pressionar Enter novamente
+        if (!keyPressRetried && (Date.now() - typeTime > 6000) && !isMasked) {
           keyPressRetried = true;
           try {
             await filterIn.press('Enter');
           } catch (e) {}
         }
 
-        await this.page.waitForTimeout(500);
+        await this.page.waitForTimeout(250);
       }
 
       // Se atingiu o deadline (timeout)
