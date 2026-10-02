@@ -375,7 +375,10 @@ async function processFiles(ctx, opts) {
       await espaider.start();
       if (user && pwd) {
         clog('dim', 'Realizando login automático no Espaider...');
-        await espaider.login(user, pwd);
+        const loggedIn = await espaider.login(user, pwd);
+        if (!loggedIn) throw new Error('login ou tela de consulta não ficou pronta');
+      } else if (!(await espaider._ensureFilter())) {
+        throw new Error('filtro do Contencioso não ficou disponível');
       }
       espaiderOk = true;
     } catch (e) {
@@ -392,9 +395,17 @@ async function processFiles(ctx, opts) {
       if (!espaider) return;
       await espaider.stop();
       await espaider.start();
-      if (user && pwd) await espaider.login(user, pwd);
+      if (user && pwd && !(await espaider.login(user, pwd))) {
+        espaiderOk = false;
+        throw new Error('login ou tela de consulta não ficou pronta após reinício');
+      }
+      if (!user && !(await espaider._ensureFilter())) {
+        espaiderOk = false;
+        throw new Error('filtro do Contencioso não ficou disponível após reinício');
+      }
       espaider._filterLocator = null;
       espaider._filterFrame = null;
+      espaiderOk = true;
     } catch (e) {
       clog('error', `Falha ao reiniciar o Espaider: ${e}`);
     }
@@ -579,7 +590,7 @@ async function consultarNpus(ctx, opts) {
     try {
       await espaider.start();
       clog('dim', `Realizando login no Espaider (timeout: ${Math.round(espaiderTimeout / 1000)}s)...`);
-      await espaider.login(user, pwd);
+      if (!(await espaider.login(user, pwd))) throw new Error('login ou tela de consulta não ficou pronta');
       espaiderOk = true;
     } catch (e) {
       clog('error', `Falha ao iniciar Espaider: ${e}`);
@@ -591,8 +602,13 @@ async function consultarNpus(ctx, opts) {
       clog('warning', '  - Reiniciando sessão do navegador Edge...');
       await espaider.stop();
       await espaider.start();
-      if (user && pwd) await espaider.login(user, pwd);
+      if (user && pwd && !(await espaider.login(user, pwd))) {
+        espaiderOk = false;
+        throw new Error('login ou tela de consulta não ficou pronta após reinício');
+      }
       espaider._filterLocator = null;
+      espaider._filterFrame = null;
+      espaiderOk = true;
     } catch (e) {
       clog('error', `Falha ao reiniciar o Espaider: ${e}`);
     }

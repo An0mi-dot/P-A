@@ -55,7 +55,7 @@ class EspaiderAutomator {
   }
 
   async login(user, pwd, goToContencioso = true) {
-    if (!this.page) return;
+    if (!this.page) return false;
     this._user = user;
     this._pwd = pwd;
     try {
@@ -68,14 +68,18 @@ class EspaiderAutomator {
       await this.page.waitForSelector('span:has-text("Contencioso")', { timeout: 25000 });
 
       if (goToContencioso) {
-        try {
-          await this.page.click('div[title="Contencioso"] button', { timeout: 8000 });
-          await this.page.waitForSelector('iframe', { timeout: 15000 });
-          await this._waitForMaskClear(10000);
-        } catch (e) {}
+        await this.page.click('div[title="Contencioso"] button', { timeout: 8000 });
+        await this.page.waitForSelector('iframe', { timeout: 15000 });
+        await this._waitForMaskClear(10000);
+        const filter = await this._ensureFilter();
+        if (!filter) throw new Error('filtro do Contencioso não ficou disponível');
       }
+      return true;
     } catch (e) {
       console.error(`Error logging in: ${e}`);
+      this._filterLocator = null;
+      this._filterFrame = null;
+      return false;
     }
   }
 
@@ -286,7 +290,14 @@ class EspaiderAutomator {
     try {
       await loc.click({ timeout: 2000 }).catch(() => {});
       await loc.fill(text, { timeout: 3000 });
+      const currentValue = await loc.inputValue({ timeout: 1000 }).catch(() => '');
+      if (currentValue !== text) await loc.evaluate((el, value) => { el.value = value; }, text);
+      await loc.evaluate((el) => {
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }).catch(() => {});
       if (pressEnter) {
+        await loc.press('Enter', { timeout: 3000 });
         await loc.press('Enter', { timeout: 1500 }).catch(() => {});
       }
     } catch (e) {
@@ -297,9 +308,10 @@ class EspaiderAutomator {
           el.dispatchEvent(new Event('change', { bubbles: true }));
         }, text);
         if (pressEnter) {
+          await loc.press('Enter', { timeout: 3000 });
           await loc.press('Enter', { timeout: 1500 }).catch(() => {});
         }
-      } catch (e2) {}
+      } catch (e2) { throw e2; }
     }
   }
 
