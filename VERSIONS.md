@@ -325,3 +325,7 @@ Iberdrola corporate proxy (ADFS/SAML) intercepting CDN and Supabase API calls.
 
 - Commit: 3f2f010
 - Notes: feat(ocr): adiciona recuperacao de confusao OCR em NPU/AR e rotacoes 180/micro-angulos [skip ci]
+## v3.2.6 - 2026-10-02
+
+- Commit: 2c22d02
+- Notes: fix: aguarda resposta do Espaider por trigger de DOM
