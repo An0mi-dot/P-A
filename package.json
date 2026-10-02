@@ -1,6 +1,6 @@
 {
   "name": "projudi_cita_inti",
-  "version": "3.2.6",
+  "version": "3.2.7",
   "description": "Ferramenta local de automação judicial",
   "main": "main.js",
   "scripts": {

@@ -329,3 +329,7 @@ Iberdrola corporate proxy (ADFS/SAML) intercepting CDN and Supabase API calls.
 
 - Commit: 2c22d02
 - Notes: fix: aguarda resposta do Espaider por trigger de DOM
+## v3.2.7 - 2026-10-02
+
+- Commit: 40c491f
+- Notes: fix: aguarda consulta do Espaider apos OCR
