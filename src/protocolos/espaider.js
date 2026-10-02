@@ -213,7 +213,7 @@ class EspaiderAutomator {
 
   // Aguarda uma mudança produzida pelo próprio ExtJS: linha encontrada ou grid vazia.
   // O timeout externo continua apenas como watchdog caso a sessão fique travada.
-  async _waitForSearchTrigger(frame, npuRaw, npuDigits, timeoutMs) {
+  async _waitForSearchTriggerInFrame(frame, npuRaw, npuDigits, timeoutMs) {
     if (!frame) return { type: 'watchdog' };
 
     const trigger = frame.waitForFunction(({ raw, digits }) => new Promise((resolve) => {
@@ -272,6 +272,14 @@ class EspaiderAutomator {
     } catch (e) {
       return { type: 'watchdog', error: e };
     }
+  }
+
+  async _waitForSearchTrigger(frames, npuRaw, npuDigits, timeoutMs) {
+    const candidates = (frames || []).filter(Boolean);
+    if (!candidates.length) return { type: 'watchdog' };
+    return Promise.race(candidates.map((frame) => (
+      this._waitForSearchTriggerInFrame(frame, npuRaw, npuDigits, timeoutMs)
+    )));
   }
 
   async _typeClear(loc, text, pressEnter = true) {
@@ -457,7 +465,7 @@ class EspaiderAutomator {
       await this._typeClear(filterIn, npuRaw, true);
       await this.page.waitForTimeout(300);
 
-      const triggerResult = await this._waitForSearchTrigger(this._filterFrame, npuRaw, npuDigits, timeoutMs);
+      const triggerResult = await this._waitForSearchTrigger(this._frames(), npuRaw, npuDigits, timeoutMs);
       if (triggerResult.type === 'row') {
         const row = await this._findNpuRow(npuRaw, npuDigits);
         const tds = row ? row.locator('td') : null;

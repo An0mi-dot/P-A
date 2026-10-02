@@ -363,30 +363,38 @@ async function processFiles(ctx, opts) {
     clog('warning', 'tesseract.exe não localizado nas pastas padrão. Tentando fallback...');
   }
 
-  // Espaider
+  // Espaider: a sessão é aberta sob demanda, após o OCR encontrar um NPU válido.
   const espaiderTimeout = Number(cfg.espaider_timeout) || 60000;
-  clog('dim', `Inicializando consulta ao Espaider (timeout: ${Math.round(espaiderTimeout / 1000)}s)...`);
-  const espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
+  let espaider = null;
   let espaiderOk = false;
-  try {
-    await espaider.start();
-    if (user && pwd) {
-      clog('dim', 'Realizando login automático no Espaider...');
-      await espaider.login(user, pwd);
+  const ensureEspaider = async () => {
+    if (espaiderOk && espaider) return true;
+    try {
+      clog('dim', `Inicializando consulta ao Espaider (watchdog: ${Math.round(espaiderTimeout / 1000)}s)...`);
+      espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
+      await espaider.start();
+      if (user && pwd) {
+        clog('dim', 'Realizando login automático no Espaider...');
+        await espaider.login(user, pwd);
+      }
+      espaiderOk = true;
+    } catch (e) {
+      espaiderOk = false;
+      clog('error', `Falha ao iniciar Selenium/Espaider: ${e}`);
+      clog('warning', 'Continuando sem consulta ao Espaider.');
     }
-    espaiderOk = true;
-  } catch (e) {
-    clog('error', `Falha ao iniciar Selenium/Espaider: ${e}`);
-    clog('warning', 'Continuando sem consulta ao Espaider.');
-  }
+    return espaiderOk;
+  };
 
   const forceEspaiderRestart = async () => {
     try {
       clog('warning', '  - Reiniciando sessão do navegador Edge...');
+      if (!espaider) return;
       await espaider.stop();
       await espaider.start();
       if (user && pwd) await espaider.login(user, pwd);
       espaider._filterLocator = null;
+      espaider._filterFrame = null;
     } catch (e) {
       clog('error', `Falha ao reiniciar o Espaider: ${e}`);
     }
@@ -444,6 +452,7 @@ async function processFiles(ctx, opts) {
         if (hasValidNpu) validNpus.push(npu);
 
         let escritorio = '';
+        if (hasValidNpu && !espaiderOk) await ensureEspaider();
         if (espaiderOk && hasValidNpu) {
           if (totalEspaiderCalls > 0 && totalEspaiderCalls % 35 === 0) {
             clog('dim', `  - Reiniciando Espaider por precaução (lote de ${totalEspaiderCalls} consultas)`);
@@ -472,6 +481,19 @@ async function processFiles(ctx, opts) {
           } else if (!st.ok || st.timedOut) {
             clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Reiniciando navegador...`);
             await forceEspaiderRestart();
+            if (!shouldCancel()) {
+              try {
+                escritorio = await espaider.searchNpu(npu);
+                const retry = espaider.lastSearch || {};
+                if (escritorio) {
+                  clog('success', `  - Escritório encontrado no Espaider após recuperação: ${escritorio}`);
+                } else if (retry.ok && retry.found === false) {
+                  clog('dim', '  - Processo não cadastrado no Espaider após recuperação');
+                }
+              } catch (retryError) {
+                clog('error', `  - Nova consulta após recuperação falhou: ${retryError.message || retryError}`);
+              }
+            }
             consecutiveErrors = 0;
           }
         }
@@ -519,7 +541,7 @@ async function processFiles(ctx, opts) {
     progress(((idx + 1) / totalFiles) * 100);
   }
 
-  try { await espaider.stop(); clog('dim', 'Fechando conexão do Espaider.'); } catch (e) {}
+  try { if (espaider) await espaider.stop(); clog('dim', 'Fechando conexão do Espaider.'); } catch (e) {}
 
   // Salva log
   if (outputFolder) {
@@ -618,6 +640,19 @@ async function consultarNpus(ctx, opts) {
       } else if (!st.ok || st.timedOut) {
         clog('warning', `  - Espaider demorou mais de ${Math.round(espaiderTimeout / 1000)}s para responder (timeout). Reiniciando navegador...`);
         await forceEspaiderRestart();
+        if (!shouldCancel()) {
+          try {
+            escritorio = await espaider.searchNpu(npu);
+            const retry = espaider.lastSearch || {};
+            if (escritorio) {
+              clog('success', `  - Escritório encontrado no Espaider após recuperação: ${escritorio}`);
+            } else if (retry.ok && retry.found === false) {
+              clog('dim', '  - Processo não cadastrado no Espaider após recuperação');
+            }
+          } catch (retryError) {
+            clog('error', `  - Nova consulta após recuperação falhou: ${retryError.message || retryError}`);
+          }
+        }
         consecutiveErrors = 0;
       }
     }
