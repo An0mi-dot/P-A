@@ -12,10 +12,11 @@ class EspaiderAutomator {
     this.page = null;
     this.headless = headless;
     this._filterLocator = null; // cache do input de filtro
+    this._filterFrame = null;
     this._user = '';
     this._pwd = '';
-    // Timeout generoso: padrão 25 segundos (equilíbrio entre lentidão do Spider e rapidez de resposta)
-    this.timeoutMs = options.timeoutMs || 25000;
+    // O Espaider pode levar mais de 25s para concluir a consulta e preencher a grid.
+    this.timeoutMs = options.timeoutMs || 60000;
     this.lastSearch = null;
   }
 
@@ -97,7 +98,10 @@ class EspaiderAutomator {
             const el = loc.nth(i);
             const vis = await el.isVisible({ timeout: 400 }).catch(() => false);
             const enb = await el.isEnabled({ timeout: 400 }).catch(() => false);
-            if (vis && enb) return el;
+            if (vis && enb) {
+              this._filterFrame = frame;
+              return el;
+            }
           }
         }
         const xloc = frame.locator('xpath=//label[text()="Filtrar"]/following::input[1]');
@@ -106,7 +110,10 @@ class EspaiderAutomator {
           const el = xloc.nth(i);
           const vis = await el.isVisible({ timeout: 400 }).catch(() => false);
           const enb = await el.isEnabled({ timeout: 400 }).catch(() => false);
-          if (vis && enb) return el;
+          if (vis && enb) {
+            this._filterFrame = frame;
+            return el;
+          }
         }
       } catch (e) {}
     }
@@ -182,7 +189,7 @@ class EspaiderAutomator {
 
       // Retry (re-clica, detecta se caiu na tela de login)
       const tRetryStart = Date.now();
-      while (!filterIn && Date.now() - tRetryStart < 25000) {
+      while (!filterIn && Date.now() - tRetryStart < 60000) {
         try {
           const loginEls = await this.page.locator('input[id*="login"], input[name*="login"], input[id*="username"]').count();
           if (loginEls > 0) {
@@ -202,6 +209,69 @@ class EspaiderAutomator {
 
     this._filterLocator = filterIn;
     return filterIn;
+  }
+
+  // Aguarda uma mudança produzida pelo próprio ExtJS: linha encontrada ou grid vazia.
+  // O timeout externo continua apenas como watchdog caso a sessão fique travada.
+  async _waitForSearchTrigger(frame, npuRaw, npuDigits, timeoutMs) {
+    if (!frame) return { type: 'watchdog' };
+
+    const trigger = frame.waitForFunction(({ raw, digits }) => new Promise((resolve) => {
+      let sawLoading = false;
+      let changed = false;
+      let settled = false;
+
+      const isVisible = (element) => {
+        if (!element) return false;
+        const style = window.getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+      };
+
+      const inspect = () => {
+        if (settled) return;
+        const loading = [...document.querySelectorAll('.x-mask-loading, .ext-el-mask-msg, div.loading-indicator, div.x-grid-load-mask')]
+          .some(isVisible);
+        if (loading) sawLoading = true;
+
+        const rows = [...document.querySelectorAll('tr.x-grid-row, tr.x-grid3-row')];
+        const row = rows.find((element) => {
+          const text = element.textContent || '';
+          return (raw && text.includes(raw)) || (digits.length >= 10 && text.replace(/\\D/g, '').includes(digits));
+        });
+        if (row) {
+          settled = true;
+          observer.disconnect();
+          resolve({ type: 'row' });
+          return;
+        }
+
+        const emptyText = [...document.querySelectorAll('.x-grid-empty-text, .x-grid-empty, .x-grid3-empty, .x-paging-info, .x-status-text')]
+          .some((element) => /nenhum registro|não há registros|nao ha registros|sem registros|nenhum resultado|nenhum processo|0 de 0|0 registros|exibindo 0/i.test(element.textContent || '') && isVisible(element));
+        const gridBodies = [...document.querySelectorAll('div.x-grid3-body, div.x-grid-body, div.x-grid-view, div.x-grid3-scroller')];
+        const zeroRows = gridBodies.some((body) => isVisible(body) && !body.querySelector('tr.x-grid-row, tr.x-grid3-row, div.x-grid-row'));
+        if (changed && (sawLoading || !loading) && (emptyText || zeroRows)) {
+          settled = true;
+          observer.disconnect();
+          resolve({ type: 'empty' });
+        }
+      };
+
+      const observer = new MutationObserver(() => {
+        changed = true;
+        inspect();
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+      inspect();
+    }), { raw: npuRaw, digits: npuDigits }, { timeout: 0 });
+
+    try {
+      return await Promise.race([
+        trigger,
+        new Promise((resolve) => setTimeout(() => resolve({ type: 'watchdog' }), timeoutMs)),
+      ]);
+    } catch (e) {
+      return { type: 'watchdog', error: e };
+    }
   }
 
   async _typeClear(loc, text, pressEnter = true) {
@@ -369,7 +439,7 @@ class EspaiderAutomator {
     }
     const npuDigits = npuRaw.replace(/\D/g, '');
 
-    const timeoutMs = options.timeoutMs || this.timeoutMs || 25000;
+    const timeoutMs = options.timeoutMs || this.timeoutMs || 60000;
     const deadline = Date.now() + timeoutMs;
 
     try {
@@ -387,61 +457,20 @@ class EspaiderAutomator {
       await this._typeClear(filterIn, npuRaw, true);
       await this.page.waitForTimeout(300);
 
-      let sawMask = false;
-      let keyPressRetried = false;
-      const typeTime = Date.now();
-
-      while (Date.now() < deadline) {
-        const isMasked = await this._isGridMasked();
-        if (isMasked) sawMask = true;
-
-        // 1. Verifica se a linha com o NPU já está presente
+      const triggerResult = await this._waitForSearchTrigger(this._filterFrame, npuRaw, npuDigits, timeoutMs);
+      if (triggerResult.type === 'row') {
         const row = await this._findNpuRow(npuRaw, npuDigits);
-        if (row) {
-          const tds = row.locator('td');
-          const nTds = await tds.count().catch(() => 0);
-          let escritorio = '';
-          if (nTds >= 8) {
-            escritorio = ((await tds.nth(7).textContent().catch(() => '')) || '').trim();
-          }
-          const res = { ok: true, found: true, escritorio, error: null, timedOut: false };
-          this.lastSearch = res;
-          return res;
-        }
-
-        // 2. Verifica se o Espaider indicou vazio (ou 0 linhas)
-        // Se a máscara já foi vista e sumiu, ou se já passaram pelo menos 800ms desde a digitação
-        const elapsed = Date.now() - typeTime;
-        if (!isMasked && (sawMask || elapsed > 800)) {
-          const isEmptyText = await this._gridEmpty();
-          const isZeroRows = await this._hasZeroRows();
-
-          if (isEmptyText || isZeroRows) {
-            await this.page.waitForTimeout(200);
-            const stillMasked = await this._isGridMasked();
-            if (!stillMasked) {
-              const confirmRow = await this._findNpuRow(npuRaw, npuDigits);
-              if (confirmRow) continue;
-
-              const confirmEmpty = (await this._gridEmpty()) || (await this._hasZeroRows());
-              if (confirmEmpty) {
-                const res = { ok: true, found: false, escritorio: '', error: null, timedOut: false };
-                this.lastSearch = res;
-                return res;
-              }
-            }
-          }
-        }
-
-        // Se passou mais de 6s sem máscara e sem resultado, tenta pressionar Enter novamente
-        if (!keyPressRetried && (Date.now() - typeTime > 6000) && !isMasked) {
-          keyPressRetried = true;
-          try {
-            await filterIn.press('Enter');
-          } catch (e) {}
-        }
-
-        await this.page.waitForTimeout(250);
+        const tds = row ? row.locator('td') : null;
+        const nTds = tds ? await tds.count().catch(() => 0) : 0;
+        const escritorio = nTds >= 8 ? ((await tds.nth(7).textContent().catch(() => '')) || '').trim() : '';
+        const res = { ok: true, found: true, escritorio, error: null, timedOut: false };
+        this.lastSearch = res;
+        return res;
+      }
+      if (triggerResult.type === 'empty') {
+        const res = { ok: true, found: false, escritorio: '', error: null, timedOut: false };
+        this.lastSearch = res;
+        return res;
       }
 
       // Se atingiu o deadline (timeout)
@@ -493,6 +522,7 @@ class EspaiderAutomator {
     this.page = null;
     this.context = null;
     this._filterLocator = null;
+    this._filterFrame = null;
     this.lastSearch = null;
   }
 }

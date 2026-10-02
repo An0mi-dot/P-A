@@ -364,7 +364,7 @@ async function processFiles(ctx, opts) {
   }
 
   // Espaider
-  const espaiderTimeout = Number(cfg.espaider_timeout) || 25000;
+  const espaiderTimeout = Number(cfg.espaider_timeout) || 60000;
   clog('dim', `Inicializando consulta ao Espaider (timeout: ${Math.round(espaiderTimeout / 1000)}s)...`);
   const espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
   let espaiderOk = false;
@@ -550,7 +550,7 @@ async function consultarNpus(ctx, opts) {
   clog('highlight', `Consultando ${total} NPU(s) no Espaider...`);
 
   const cfg = config.loadConfig() || {};
-  const espaiderTimeout = Number(cfg.espaider_timeout) || 25000;
+  const espaiderTimeout = Number(cfg.espaider_timeout) || 60000;
   const espaider = new EspaiderAutomator(headless, { timeoutMs: espaiderTimeout });
   let espaiderOk = false;
   if (user && pwd) {

@@ -4,9 +4,9 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { EspaiderAutomator } = require('../../src/protocolos/espaider');
 
-test('EspaiderAutomator - Inicialização com timeouts generosos', () => {
+test('EspaiderAutomator - Inicialização com timeout adequado ao carregamento', () => {
   const defaultAuto = new EspaiderAutomator(true);
-  assert.strictEqual(defaultAuto.timeoutMs, 25000, 'Timeout padrão deve ser 25 segundos (25000ms)');
+  assert.strictEqual(defaultAuto.timeoutMs, 60000, 'Timeout padrão deve ser 60 segundos (60000ms)');
 
   const customAuto = new EspaiderAutomator(true, { timeoutMs: 60000 });
   assert.strictEqual(customAuto.timeoutMs, 60000, 'Deve respeitar timeout customizado');
