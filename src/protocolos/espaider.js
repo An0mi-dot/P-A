@@ -237,10 +237,10 @@ class EspaiderAutomator {
           .some(isVisible);
         if (loading) sawLoading = true;
 
-        const rows = [...document.querySelectorAll('tr.x-grid-row, tr.x-grid3-row')];
+        const rows = [...document.querySelectorAll('tr.x-grid-row:not(.x-grid-colmodel), tr.x-grid3-row:not(.x-grid-colmodel)')];
         const row = rows.find((element) => {
           const text = element.textContent || '';
-          return (raw && text.includes(raw)) || (digits.length >= 10 && text.replace(/\\D/g, '').includes(digits));
+          return changed && ((raw && text.includes(raw)) || (digits.length >= 10 && text.replace(/\D/g, '').includes(digits)));
         });
         if (row) {
           settled = true;
@@ -249,11 +249,12 @@ class EspaiderAutomator {
           return;
         }
 
-        const emptyText = [...document.querySelectorAll('.x-grid-empty-text, .x-grid-empty, .x-grid3-empty, .x-paging-info, .x-status-text')]
+        const dataRows = [...document.querySelectorAll('tr.x-grid-row:not(.x-grid-colmodel), tr.x-grid3-row:not(.x-grid-colmodel), div.x-grid-row')];
+        const emptyText = [...document.querySelectorAll('.x-grid-empty, .x-grid3-empty, .x-paging-info, .x-status-text')]
           .some((element) => /nenhum registro|não há registros|nao ha registros|sem registros|nenhum resultado|nenhum processo|0 de 0|0 registros|exibindo 0/i.test(element.textContent || '') && isVisible(element));
         const gridBodies = [...document.querySelectorAll('div.x-grid3-body, div.x-grid-body, div.x-grid-view, div.x-grid3-scroller')];
-        const zeroRows = gridBodies.some((body) => isVisible(body) && !body.querySelector('tr.x-grid-row, tr.x-grid3-row, div.x-grid-row'));
-        if (changed && (sawLoading || !loading) && (emptyText || zeroRows)) {
+        const zeroRows = gridBodies.some((body) => isVisible(body) && !body.querySelector('tr.x-grid-row:not(.x-grid-colmodel), tr.x-grid3-row:not(.x-grid-colmodel), div.x-grid-row'));
+        if (changed && (sawLoading || !loading) && dataRows.length === 0 && (emptyText || zeroRows)) {
           settled = true;
           observer.disconnect();
           resolve({ type: 'empty' });
@@ -289,6 +290,8 @@ class EspaiderAutomator {
   async _typeClear(loc, text, pressEnter = true) {
     try {
       await loc.click({ timeout: 2000 }).catch(() => {});
+      await loc.press('Control+a', { timeout: 1500 }).catch(() => {});
+      await loc.press('Backspace', { timeout: 1500 }).catch(() => {});
       await loc.fill(text, { timeout: 3000 });
       const currentValue = await loc.inputValue({ timeout: 1000 }).catch(() => '');
       if (currentValue !== text) await loc.evaluate((el, value) => { el.value = value; }, text);
@@ -297,8 +300,7 @@ class EspaiderAutomator {
         el.dispatchEvent(new Event('change', { bubbles: true }));
       }).catch(() => {});
       if (pressEnter) {
-        await loc.press('Enter', { timeout: 3000 });
-        await loc.press('Enter', { timeout: 1500 }).catch(() => {});
+        await this._submitFilter(loc);
       }
     } catch (e) {
       try {
@@ -308,11 +310,17 @@ class EspaiderAutomator {
           el.dispatchEvent(new Event('change', { bubbles: true }));
         }, text);
         if (pressEnter) {
-          await loc.press('Enter', { timeout: 3000 });
-          await loc.press('Enter', { timeout: 1500 }).catch(() => {});
+          await this._submitFilter(loc);
         }
       } catch (e2) { throw e2; }
     }
+  }
+
+  async _submitFilter(loc) {
+    await loc.focus({ timeout: 3000 });
+    await loc.press('Enter', { timeout: 3000 });
+    await this.page.waitForTimeout(250);
+    await loc.press('Enter', { timeout: 1500 }).catch(() => {});
   }
 
   async _findNpuRow(npuRaw, npuDigits) {
@@ -473,11 +481,11 @@ class EspaiderAutomator {
       // Aguarda qualquer requisição pendente anterior finalizar
       await this._waitForMaskClear(4000);
 
-      // Digita o NPU e aciona a pesquisa
-      await this._typeClear(filterIn, npuRaw, true);
-      await this.page.waitForTimeout(300);
-
-      const triggerResult = await this._waitForSearchTrigger(this._frames(), npuRaw, npuDigits, timeoutMs);
+      // Preenche o NPU, arma o observador e só então envia Enter.
+      await this._typeClear(filterIn, npuRaw, false);
+      const triggerPromise = this._waitForSearchTrigger(this._frames(), npuRaw, npuDigits, timeoutMs);
+      await this._submitFilter(filterIn);
+      const triggerResult = await triggerPromise;
       if (triggerResult.type === 'row') {
         const row = await this._findNpuRow(npuRaw, npuDigits);
         const tds = row ? row.locator('td') : null;
