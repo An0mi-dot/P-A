@@ -86,6 +86,17 @@
         table.results tbody tr:nth-child(even) { background: var(--surface-hover); }
         table.results .r-num { text-align: center; color: var(--text-secondary); }
 
+        /* Consulta: apenas a coluna de escritório pode ser selecionada/copied. */
+        #consulta-results { display: none; flex: 1 1 auto; min-height: 160px; flex-direction: column; }
+        #consulta-results .consulta-copy-hint { margin: 0 0 5px; color: var(--text-muted); font-size: 0.75rem; }
+        table.consulta-results tbody td { user-select: none; }
+        table.consulta-results tbody td.office-cell {
+            user-select: text;
+            cursor: text;
+            font-weight: 600;
+            color: var(--text);
+        }
+
         /* Tabs (Processamento / Erros) */
         .tabs { display: flex; gap: 4px; }
         .tab-btn {
@@ -226,7 +237,7 @@
             </div>
 
             <!-- Results -->
-            <div style="flex:1 1 auto; flex-shrink:0; min-height:160px; display:flex; flex-direction:column;">
+            <div id="standard-results" style="flex:1 1 auto; flex-shrink:0; min-height:160px; display:flex; flex-direction:column;">
                 <div class="section-label"><i class="fa-solid fa-list"></i> Resultados (pré-visualização)</div>
                 <div class="table-wrap">
                     <table class="results" id="results-table">
@@ -237,6 +248,17 @@
                             </tr>
                         </thead>
                         <tbody id="results-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="consulta-results">
+                <div class="section-label"><i class="fa-solid fa-building"></i> Escritórios encontrados</div>
+                <p class="consulta-copy-hint">Selecione somente a coluna Escritório para copiar.</p>
+                <div class="table-wrap">
+                    <table class="results consulta-results" id="consulta-results-table">
+                        <thead><tr><th>Nº</th><th>NPU</th><th>COMARCA</th><th>ESCRITÓRIO</th></tr></thead>
+                        <tbody id="consulta-results-body"></tbody>
                     </table>
                 </div>
             </div>
@@ -348,6 +370,26 @@
                     body.appendChild(tr);
                 });
             }
+
+            function renderConsultaResults() {
+                const section = $('consulta-results');
+                const standard = $('standard-results');
+                const body = $('consulta-results-body');
+                if (!section || !body) return;
+                const consultaAtiva = $('chk-consulta').checked;
+                section.style.display = consultaAtiva ? 'flex' : 'none';
+                if (standard) standard.style.display = consultaAtiva ? 'none' : 'flex';
+                body.innerHTML = '';
+                if (!consultaAtiva) return;
+                state.results.forEach((r, i) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td class="r-num">${i + 1}</td>`
+                        + `<td>${escapeHtml(r.npu || '')}</td>`
+                        + `<td>${escapeHtml(r.comarca || '')}</td>`
+                        + `<td class="office-cell">${escapeHtml(r.escritorio || '')}</td>`;
+                    body.appendChild(tr);
+                });
+            }
             function renderErrors() {
                 const body = $('errors-body');
                 body.innerHTML = '';
@@ -361,9 +403,27 @@
                 return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             }
 
+            // Consulta: copia apenas o texto das células de escritório.
+            $('consulta-results-table').addEventListener('copy', (event) => {
+                const selection = window.getSelection();
+                if (!selection || selection.isCollapsed) return;
+                const offices = Array.from(document.querySelectorAll('#consulta-results-body td.office-cell'));
+                const selected = offices.filter((cell) => {
+                    for (let i = 0; i < selection.rangeCount; i++) {
+                        const range = selection.getRangeAt(i);
+                        if (range.intersectsNode(cell)) return true;
+                    }
+                    return false;
+                });
+                if (!selected.length) return;
+                event.preventDefault();
+                event.clipboardData.setData('text/plain', selected.map(cell => cell.textContent.trim()).join('\n'));
+            });
+
             // --- Toggle consulta input & agência warning ---
             $('chk-consulta').addEventListener('change', () => {
                 $('consulta-input').style.display = $('chk-consulta').checked ? 'flex' : 'none';
+                renderConsultaResults();
             });
             $('chk-agencia').addEventListener('change', () => {
                 $('aq-warn').style.display = $('chk-agencia').checked ? 'inline' : 'none';
@@ -486,7 +546,7 @@
                 await window.api.invoke('proto:save-config', { user, pwd, output_folder: state.outputFolder });
 
                 state.results = []; state.errors = [];
-                renderResults(); renderErrors();
+                renderResults(); renderConsultaResults(); renderErrors();
                 setProgress(0);
                 setRunning(true, 'Lendo arquivos...');
 
@@ -555,7 +615,7 @@
                 });
 
                 state.results = []; state.errors = [];
-                renderResults(); renderErrors();
+                renderResults(); renderConsultaResults(); renderErrors();
                 setProgress(0);
                 setRunning(true, 'Consultando Espaider...');
 
@@ -578,7 +638,7 @@
                     setProgress(100); setRunning(false);
                     if (res.ok) {
                         state.results = res.results || [];
-                        renderResults();
+                        renderResults(); renderConsultaResults();
                         $('btn-export').disabled = state.results.length === 0;
                         const mins = Math.floor(res.totalSec / 60); const secs = res.totalSec % 60;
                         setStatus(`Status: Consulta concluída (${state.results.length} em ${mins ? mins + 'm ' : ''}${secs}s)`);
@@ -645,7 +705,7 @@
                 if (res.ok) {
                     state.results = res.results || [];
                     if (res.errorRows && res.errorRows.length) state.errors = state.errors.concat(res.errorRows);
-                    renderResults(); renderErrors();
+                    renderResults(); renderConsultaResults(); renderErrors();
                     const mins = Math.floor(res.totalSec / 60); const secs = res.totalSec % 60;
                     setStatus(`Status: Concluído ${resumed ? '(revisão pós-voltar) ' : ''}(${state.results.length} processados em ${mins ? mins + 'm ' : ''}${secs}s)`);
                     log('success', 'Processamento finalizado' + (resumed ? ' — resultados atualizados após retorno à página.' : '.'));
@@ -668,6 +728,7 @@
 
             loadConfig();
             renderResults();
+            renderConsultaResults();
             renderErrors();
 
             // Se a página recarregou durante um processamento, restaura o estado
