@@ -279,6 +279,21 @@ async function ocrTesseractSingle(image, preprocess = 'full', opts = {}) {
   return ocrTesseract([image], preprocess, null, opts);
 }
 
+// Recupera documentos levemente tortos sem penalizar a leitura normal.
+// A imagem original é tentada primeiro; as micro-rotações só rodam quando
+// chamadas pelo fallback de NPU/AR.
+async function ocrTesseractTilted(image, preprocess = 'none', opts = {}) {
+  const angles = [0, -1, 1, -2, 2];
+  let best = '';
+  for (const angle of angles) {
+    const candidate = angle === 0 ? image : pdf.rotateAngle(image, angle);
+    const text = String(await ocrTesseractSingle(candidate, preprocess, opts) || '');
+    if (text.trim().length > best.trim().length) best = text;
+    if (ex.findNpu(text) || ex.findArInText(text)) return text;
+  }
+  return best;
+}
+
 function hasKeyFields(text) {
   if (!text || text.trim().length < 50) return false;
   const hasNpu = ex.findAllNpuPositions(text).length > 0 || /\d{7}[\s\-\.]\d{2}[\s\-\.]\d{4}|\b\d{20}\b/.test(text);
@@ -386,6 +401,12 @@ async function findArInImages(images) {
       if (cropResultSoft && cropResultSoft.length === 13) return cropResultSoft;
       if (cropResultSoft && !bestResult) bestResult = cropResultSoft;
 
+      // Micro-rotações para o recorte inferior
+      const tiltedText = await ocrTesseractTilted(cropImage, 'none', { psm: '3' });
+      const tiltedResult = ex.findArInText(tiltedText);
+      if (tiltedResult && tiltedResult.length === 13) return tiltedResult;
+      if (tiltedResult && !bestResult) bestResult = tiltedResult;
+
       // 4. Scan rotacionado em 90 graus e 270 graus
       const rot90Text = String(await ocrTesseractSingle(pdf.rotate90(cropImage), 'soft'));
       const rot90Result = ex.findArInText(rot90Text);
@@ -413,6 +434,7 @@ async function findArInImages(images) {
 module.exports = {
   ocrTesseract,
   ocrTesseractSingle,
+  ocrTesseractTilted,
   ocrMultiEngine,
   hasKeyFields,
   scoreText,

@@ -181,7 +181,7 @@ async function processPdfMulti(filePath, { modoAgencia = false, onLog = () => {}
       // Se não encontrou NPU na frente (ex.: página inclinada/escaneamento torto), tenta OCR direto na página com PSM 3
       if (!npu && images && images[frontIdx]) {
         try {
-          const tiltFront = String(await ocr.ocrTesseractSingle(images[frontIdx], 'none', { psm: '3' }) || '');
+          const tiltFront = String(await ocr.ocrTesseractTilted(images[frontIdx], 'none', { psm: '3' }) || '');
           npu = ex.findNpu(tiltFront) || '';
         } catch (e) {}
       }
