@@ -540,24 +540,20 @@ function normalizeArDigits(rawStr) {
 function findArInText(text) {
   if (!text) return null;
 
-  // 1. Padrão completo com prefixo de 2 letras (YH, JR, QC, etc.) e sufixo BR (tolerando B8/PR)
-  const m = /\b([A-Z]{2})\s*([0-9OIlSBoZG\s]{7,13})\s*([B8P]\s*[R])\b/i.exec(text);
+  // AR postal válido: YH + exatamente 9 dígitos + BR.
+  // Não completa nem corta candidatos curtos/longos, pois isso cria códigos falsos.
+  const m = /\b([YV])\s*H\s*([0-9OIlSBoZG\s]+?)\s*B\s*R\b/i.exec(text);
   if (m) {
-    const prefix = m[1].toUpperCase();
+    const prefix = 'YH';
     const digits = normalizeArDigits(m[2]);
     if (digits.length === 9) return `${prefix}${digits}BR`;
-    if (digits.length >= 7 && digits.length <= 11) return `${prefix}${digits.slice(-9).padStart(9, '0')}BR`;
   }
 
-  // 2. Padrão com prefixo YH flexível
-  const m2 = /\bY\s*[H]?\s*([0-9OIlSBoZG\s]{5,12})\s*[B8P]?[R]?\b/i.exec(text);
+  // 2. OCR pode separar o prefixo/sufixo; ainda exige exatamente 9 dígitos.
+  const m2 = /\b[YV]\s*H?\s*([0-9OIlSBoZG\s]+?)\s*(?:B\s*R)?\b/i.exec(text);
   if (m2) {
-    let digits = normalizeArDigits(m2[1]);
-    if (digits.startsWith('20') && digits.length === 8) digits = '0' + digits;
-    else if (digits.startsWith('87') && digits.length === 8) digits = '0' + digits;
-    if (digits.startsWith('20') && digits.length === 7) digits = '0' + digits;
-    else if (digits.startsWith('87') && digits.length === 7) digits = '0' + digits;
-    if (digits.length >= 6) return `YH${digits}BR`;
+    const digits = normalizeArDigits(m2[1]);
+    if (digits.length === 9) return `YH${digits}BR`;
   }
 
   return null;
