@@ -283,7 +283,7 @@ async function ocrTesseractSingle(image, preprocess = 'full', opts = {}) {
 // A imagem original é tentada primeiro; as micro-rotações só rodam quando
 // chamadas pelo fallback de NPU/AR.
 async function ocrTesseractTilted(image, preprocess = 'none', opts = {}) {
-  const angles = [0, -1, 1, -2, 2];
+  const angles = [0, -0.5, 0.5, -1, 1, -2, 2];
   let best = '';
   for (const angle of angles) {
     const candidate = angle === 0 ? image : pdf.rotateAngle(image, angle);
