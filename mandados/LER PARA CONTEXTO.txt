@@ -1,0 +1,17 @@
+O objetivo é conseguir acessar o outlook e acessar os e-mails de uma pasta especifica do outlook (tem que ser possível escolher qual a pasta).
+
+Ao selecionar e iniciar o processamento, o objetivo é ler todos os e-mails que seguem a estrutura e modelo semelhante aos e-mails base da pasta, no qual todos possuem: "@ALMEIDA VIANA, JOAO GUILHERME, gentileza planilhar."
+
+Todos os e-mails possuem arquivos, geralmente pdfs, quase nunca são arquivos diferentes, e se for em algum momento, esses arquivos devem ser ignorados.
+
+Semelhante ao protocolo postal, OCR tem que ser usada pra ler os pdfs e planilhar eles, porem na planilha de Agência dentro da planilha modelo. (Igual a do Protocolo Postal) 
+
+A maioria desses PDFS NÃO possuem data (N/A), portanto tem que ser a maioria sempre com "N/A".
+
+Os dados que devem ser extraídos são praticamente os mesmo que o protoclo postal extrai: Nome, NPU, Comarca, Data & Audiência. (NÃO contem AR).
+
+Os mandados são bem imprevisíveis, e as vezes eles se divergem muito uns dos outros.
+É necessário fazer um leitor universal e BEM inteligente.
+
+Existem PDFs e Emails para testes e esclarecimentos visuais e práticos.
+
